@@ -1,0 +1,26 @@
+{
+  "_comment": "특정 메이커 카탈로그의 알려진 경향을 기술한다. 키(예: SMC)는 match_names와 시스템 Maker Name을 normalize_maker로 비교해 매칭한다.",
+  "_fields": {
+    "match_names": "시스템 메이커명 별칭 목록",
+    "notes_ko": "사람이 읽는 메모",
+    "pdf_text_maker_often_absent": "본문에 상호가 잘 안 나오는 메이커면 true",
+    "extra_text_tokens_for_maker_evidence": "PDF 텍스트에서 이 문자열도 메이커 근거로 인정",
+    "relax_pdf_maker_if_filename_contains": "파일명에 포함되면(소문자 비교) 모델 일치 시 PDF 출처 검증 완화",
+    "relax_only_when_model_matched": "완화 시 모델이 이미 일치했을 때만 (기본 true)",
+    "extra_order_code_page_keywords": "형번 후보 페이지 점수에 가산할 키워드",
+    "prefer_vision_for_order_code": "OPENAI_API_KEY가 있으면 비전 호출을 더 자주 시도 (true/false)",
+    "always_run_vision_with_api": "키가 있으면 해당 메이커는 항상 비전 실행 (비용 큼, 기본 생략)"
+  },
+  "makers": {
+    "SMC": {
+      "match_names": ["SMC", "에스엠씨", "SMC KOREA", "SMC코리아"],
+      "notes_ko": "한국 SMC PDF는 본문 상호가 약하고 형번이 표 셀로만 나오는 경우가 많음.",
+      "pdf_text_maker_often_absent": true,
+      "extra_text_tokens_for_maker_evidence": ["smc", "에스엠씨"],
+      "relax_pdf_maker_if_filename_contains": ["smc", "_smc"],
+      "relax_only_when_model_matched": true,
+      "extra_order_code_page_keywords": ["실린더", "cylinder", "cj2", "cdj2", "오토스위치", "에어"],
+      "prefer_vision_for_order_code": true
+    }
+  }
+}

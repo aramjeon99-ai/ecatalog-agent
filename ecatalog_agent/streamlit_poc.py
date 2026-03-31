@@ -14,12 +14,28 @@ from rapidfuzz import fuzz
 from ecatalog_agent.db.logger import init_db
 from ecatalog_agent.models.state import ErrorFlag, NPRRecord
 from ecatalog_agent.tools.pdf_parser import pdf_parse
+from ecatalog_agent.utils.order_code_pdf_match import model_matches_order_code_table, normalize_model_compact
 from ecatalog_agent.utils.text_normalize import normalize_maker
 from ecatalog_agent.workflow.graph import run_agent_for_record
 
 
 APP_CONFIG_PATH = Path("data") / "app_config.json"
 STREAMLIT_DB_PATH = Path("data") / "ecatalog_agent.sqlite3"
+# 이 파일: ecatalog_agent/streamlit_poc.py → 저장소 루트(예: 0327_ecatalog)
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+
+
+def resolve_pdf_base_dir(pdf_base_dir: str | Path) -> Path:
+    """PDF 폴더가 상대 경로이면 프로젝트 루트 기준으로 해석한다.
+
+    예: ``3_사양검증자료`` + ``_SMC_....pdf`` →
+    ``<프로젝트>/3_사양검증자료/_SMC_....pdf``
+    """
+    p = Path(pdf_base_dir)
+    if p.is_absolute():
+        return p
+    return _REPO_ROOT / p
+
 
 # ── 회송 규칙 정의 ─────────────────────────────────────────────────────
 RETURN_RULES: dict[str, dict[str, str]] = {
@@ -73,6 +89,13 @@ RETURN_RULES: dict[str, dict[str, str]] = {
     "R7_MANUFACTURER_UNKNOWN": {
         "category": "메이커검증",
         "message": "제조사 확인이 불가하여 추가 검토 필요",
+    },
+    "R8_PDF_NOT_SAME_MAKER": {
+        "category": "검증자료",
+        "message": (
+            "등록된 제조사와 동일 주체가 발행한 사양검증자료인지 PDF에서 확인되지 않습니다. "
+            "제조사 로고·상호가 명확한 원본 자료를 첨부하거나, OPENAI_API_KEY로 GPT 비전 검증을 활성화해 주십시오."
+        ),
     },
 }
 STREAMLIT_OUTPUT_DIR = Path("output") / "streamlit_reports"
@@ -223,7 +246,7 @@ def get_qcode_context(
     maker_list_df: pd.DataFrame,
     pdf_base_dir: str | Path,
 ) -> QcodeContext:
-    pdf_base_dir = Path(pdf_base_dir)
+    pdf_base_dir = resolve_pdf_base_dir(pdf_base_dir)
 
     q_col_master = _find_col(qcode_master_df, ["q-code", "q코드", "qcode", "Q-Code", "Q코드", "q_code"])
     q_col_spec = _find_col(spec_detail_df, ["q-code", "q코드", "qcode", "Q-Code", "Q코드", "q_code", "Q코드"])
@@ -364,7 +387,9 @@ def get_qcode_context(
     if pdf_path and pdf_exists:
         try:
             parsed = pdf_parse(pdf_path, use_ocr=False)
-            pdf_text_sample = (parsed.get("text") or "")[:15000]
+            # 형번 표는 뒤쪽 페이지에만 있을 수 있음 — 전체 추출본 사용(상한만 둠)
+            full_txt = parsed.get("text") or ""
+            pdf_text_sample = full_txt[:500000]
         except Exception:
             pdf_text_sample = ""
 
@@ -407,7 +432,7 @@ def quick_status_check(
     Returns: (status, pdf_exists)
       status: '자동승인' | '자동회송' | '사람승인'
     """
-    pdf_base_dir = Path(pdf_base_dir)
+    pdf_base_dir = resolve_pdf_base_dir(pdf_base_dir)
 
     # Q3으로 시작하는 오류 코드는 즉시 자동회송
     if is_known_error_code(q_code):
@@ -519,6 +544,7 @@ def check_model_match(sys_model: str, pdf_text: str) -> tuple[bool, str]:
       4. PDF 모델 후보 퍼지 매칭 >=85
       5. 도면(DWG) 번호와 대조
       6. 핵심 세그먼트 전체 일치
+      7. 형번 체계 표 기반 분해 일치 (연속 문자열 부재 시)
 
     Returns:
         (matched: bool, matched_value: str)
@@ -578,6 +604,17 @@ def check_model_match(sys_model: str, pdf_text: str) -> tuple[bool, str]:
         seg_norms = [_norm_model(s) for s in segments[:3]]
         if all(sn in pdf_n for sn in seg_norms):
             return True, sys_model
+    # 조금 더 짧은 세그먼트까지 포함한 전 구간 일치
+    segments_loose = [s for s in re.split(r"[-_/.]", sys_model) if len(s) >= 2]
+    if len(segments_loose) >= 2:
+        seg_norms = [_norm_model(s) for s in segments_loose]
+        if all(sn in pdf_n for sn in seg_norms):
+            return True, sys_model
+
+    # ── 전략 7: 형번 표·셀 추출 PDF (예: SMC 카탈로그 8p 형식) ─────
+    pdf_compact = normalize_model_compact(pdf_text)
+    if model_matches_order_code_table(sys_model, pdf_compact):
+        return True, f"{sys_model} (형번체계·분해일치)"
 
     # ── 미발견 ────────────────────────────────────────────────────
     if best_cand and best_score >= 60.0:
@@ -670,8 +707,97 @@ def run_qcode_validation(
             ))
 
     # ── 모델명 / 메이커명 불일치 → 무조건 자동 회송 ──────────────
+    # 모델: 텍스트 기반(연속 문자열·형번 분해). 사양 추출·형번 표 OCR은 별도(GPT 비전).
     model_matched, model_pdf_val = check_model_match(ctx.model_name, ctx.pdf_text_sample)
     maker_matched = best_maker is not None and similarity >= 85.0
+
+    from ecatalog_agent.tools.vision_order_code import (
+        maker_evidence_in_pdf_text,
+        run_pdf_vision_validation,
+    )
+    from ecatalog_agent.utils.maker_catalog_hints import (
+        apply_maker_relax_pdf_source,
+        profile_for_maker,
+    )
+
+    maker_profile = profile_for_maker(ctx.maker_name)
+    _extra_maker_tokens: list[str] = []
+    if maker_profile:
+        _extra_maker_tokens.extend(
+            str(x).strip()
+            for x in (maker_profile.get("extra_text_tokens_for_maker_evidence") or [])
+            if str(x).strip()
+        )
+
+    maker_in_pdf = maker_evidence_in_pdf_text(
+        ctx.maker_name,
+        ctx.pdf_text_sample or "",
+        extra_aliases=_extra_maker_tokens,
+    )
+    pdf_maker_verified = bool(maker_in_pdf)
+    vision_result: dict[str, Any] | None = None
+    maker_hint_relax_reason: str | None = None
+
+    _api_key = os.environ.get("OPENAI_API_KEY", "").strip()
+    _extra_oc_kw = tuple(
+        str(x).strip()
+        for x in ((maker_profile or {}).get("extra_order_code_page_keywords") or [])
+        if str(x).strip()
+    )
+    _prefer_vision = bool((maker_profile or {}).get("prefer_vision_for_order_code"))
+    _always_vision = bool((maker_profile or {}).get("always_run_vision_with_api"))
+
+    _should_run_vision = bool(
+        ctx.pdf_path
+        and ctx.pdf_exists
+        and _api_key
+        and (
+            not model_matched
+            or "형번체계·분해일치" in model_pdf_val
+            or "옵션미확인" in model_pdf_val
+            or (maker_matched and not maker_in_pdf)
+            or _always_vision
+            or (_prefer_vision and maker_matched)
+        )
+    )
+    if _should_run_vision:
+        try:
+            vision_result = run_pdf_vision_validation(
+                pdf_path=str(ctx.pdf_path),
+                pdf_full_text=ctx.pdf_text_sample or "",
+                maker_name=(ctx.maker_name or "").strip(),
+                model_name=(ctx.model_name or "").strip(),
+                extra_order_code_keywords=_extra_oc_kw,
+            )
+        except Exception as e:
+            vision_result = {"ok": False, "error": str(e)}
+
+    if vision_result and vision_result.get("ok") and isinstance(vision_result.get("parsed"), dict):
+        vp = vision_result["parsed"]
+        if vp.get("can_compose_model_from_order_tables") is True:
+            model_matched = True
+            pgs = vision_result.get("selected_page_indices", [])
+            model_pdf_val = (
+                f"GPT-비전 형번조합 가능(p.{pgs}): "
+                f"{(vp.get('reason_ko') or '')[:200]}"
+            )
+        same_doc = vp.get("is_same_manufacturer_document")
+        if same_doc is True:
+            pdf_maker_verified = True
+            state.error_flags = [f for f in state.error_flags if f.code != "ERR_NO_LOGO"]
+        elif same_doc is False and not maker_in_pdf:
+            pdf_maker_verified = False
+
+    if maker_profile:
+        pdf_maker_verified, maker_hint_relax_reason = apply_maker_relax_pdf_source(
+            profile=maker_profile,
+            model_matched=model_matched,
+            pdf_maker_verified=pdf_maker_verified,
+            pdf_filename=ctx.pdf_filename,
+        )
+
+    if model_matched:
+        state.error_flags = [f for f in state.error_flags if f.code != "ERR_MODEL_MISMATCH"]
 
     if not model_matched:
         forced_flags.append("ERR_MODEL_MISMATCH")
@@ -692,6 +818,18 @@ def run_qcode_validation(
                 step="STEP1",
                 message="제조사명이 기준 목록과 일치하지 않습니다.",
                 evidence=f"system={ctx.maker_name}, best={best_maker}, sim={similarity:.1f}",
+            ))
+
+    # ── 등록 메이커인 경우: 첨부 PDF가 동일 제조사 발행 자료인지 필수 ─────────
+    if maker_matched and not pdf_maker_verified:
+        forced_flags.append("ERR_PDF_MAKER_SOURCE")
+        already = {f.code for f in state.error_flags}
+        if "ERR_PDF_MAKER_SOURCE" not in already:
+            state.error_flags.append(ErrorFlag(
+                code="ERR_PDF_MAKER_SOURCE",
+                step="STEP1",
+                message="등록 제조사와 동일 주체의 사양검증자료임이 PDF(텍스트 또는 GPT 비전)에서 확인되지 않습니다.",
+                evidence=f"maker_in_pdf_text={maker_in_pdf}, vision_ok={bool(vision_result and vision_result.get('ok'))}",
             ))
 
     # ── 제조업 여부 3단계 검증 ────────────────────────────────────────
@@ -756,6 +894,7 @@ def run_qcode_validation(
         "ERR_NON_MANUFACTURER":   "R5_NON_MANUFACTURER",
         "ERR_QUOTE_ONLY":         "R6_QUOTE_ONLY",
         "ERR_MANUFACTURER_UNKNOWN": "R7_MANUFACTURER_UNKNOWN",
+        "ERR_PDF_MAKER_SOURCE":     "R8_PDF_NOT_SAME_MAKER",
     }
 
     # 제조업 검증 결과에 따라 규칙 추가
@@ -849,6 +988,19 @@ def run_qcode_validation(
         "maker_homepage_url": ctx.maker_homepage_url,
         "active_rules": active_rules,
         "web_search_result": web_result,
+        "vision_order_code_result": vision_result,
+        "pdf_maker_verified": pdf_maker_verified,
+        "maker_in_pdf_text": maker_in_pdf,
+        "spec_hints_vision": (
+            (vision_result.get("parsed") or {}).get("spec_hints")
+            if vision_result and vision_result.get("ok")
+            else None
+        ),
+        "maker_catalog_hint": {
+            "matched": bool(maker_profile),
+            "notes_ko": (maker_profile or {}).get("notes_ko"),
+            "relax_pdf_source_reason": maker_hint_relax_reason,
+        },
         "review_report_path": state.review_report.excel_path if state.review_report else None,
     }
 

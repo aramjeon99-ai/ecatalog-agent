@@ -16,3 +16,10 @@ output_test*/
 # OS
 .DS_Store
 Thumbs.db
+
+# Office lock files
+~$*
+
+# Secrets
+.env
+.env.local

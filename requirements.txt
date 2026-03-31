@@ -4,5 +4,6 @@ pydantic>=2
 pydantic-settings
 rapidfuzz
 PyMuPDF
+openai>=1.0.0
 requests
 streamlit

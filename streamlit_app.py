@@ -14,6 +14,7 @@ from ecatalog_agent.streamlit_poc import (
     load_app_config,
     load_master_data,
     quick_status_check,
+    resolve_pdf_base_dir,
     run_qcode_validation,
     save_app_config,
     _DATA_FILENAMES,
@@ -104,6 +105,13 @@ if qcode_master_df is None:
     st.stop()
 
 qcode_list = get_qcode_list(qcode_master_df)
+
+st.sidebar.caption(
+    "PDF 폴더(해석): `" + str(resolve_pdf_base_dir(pdf_base_dir)) + "`"
+)
+st.sidebar.caption(
+    "메이커별 카탈로그 경향: `data/maker_catalog_hints.json` 편집 (저장 후 재검증)"
+)
 
 # 검증 결과 캐시: {q_code: result_dict}
 if "validation_results" not in st.session_state:
@@ -224,6 +232,7 @@ def show_validation_dialog(q_code: str) -> None:
     pdf_file  = judgment.get("connected_pdf_filename") or "없음"
 
     model_matched  = judgment.get("model_matched")
+    maker_matched  = bool(judgment.get("maker_matched"))
     model_pdf_val  = judgment.get("model_pdf_val") or "(없음)"
     model_result   = "일치" if model_matched else "불일치"
     maker_result, maker_pdf_val = _compare_maker(sys_maker, best_maker, similarity)
@@ -254,6 +263,36 @@ def show_validation_dialog(q_code: str) -> None:
         st.markdown(f"- **Maker-1**: 시스템 `{sys_maker}` vs e-catalog `{maker_pdf_val}` (유사도 {similarity:.1f}) → **{maker_result}**")
         src = pdf_file if pdf_text else "(PDF 없음)"
         st.caption(f"근거 자료: e-catalog — {src}")
+        pdf_mv = judgment.get("pdf_maker_verified")
+        if pdf_mv is not None:
+            st.caption(
+                f"첨부 PDF 제조사 일치(텍스트 또는 GPT 비전): "
+                f"{'✅' if pdf_mv else '❌'}"
+            )
+        vision_r = judgment.get("vision_order_code_result")
+        if vision_r:
+            with st.expander("GPT 비전 — 형번·제조사 자료 판별", expanded=False):
+                if vision_r.get("ok"):
+                    vp = vision_r.get("parsed") or {}
+                    st.json(
+                        {
+                            "선택_페이지": vision_r.get("selected_page_indices"),
+                            "동일제조사자료": vp.get("is_same_manufacturer_document"),
+                            "형번조합가능": vp.get("can_compose_model_from_order_tables"),
+                            "신뢰도": vp.get("confidence"),
+                            "근거": vp.get("reason_ko"),
+                            "사양힌트": vp.get("spec_hints"),
+                        }
+                    )
+                else:
+                    st.warning(vision_r.get("error", "비전 호출 실패"))
+        elif pdf_text and not os.environ.get("OPENAI_API_KEY", "").strip():
+            st.caption("형번 표 OCR(GPT 비전)을 쓰려면 환경 변수 `OPENAI_API_KEY`를 설정하세요.")
+        mh = judgment.get("maker_catalog_hint") or {}
+        if mh.get("matched"):
+            st.caption(f"메이커 힌트(JSON): {mh.get('notes_ko') or '등록됨'}")
+            if mh.get("relax_pdf_source_reason"):
+                st.success(mh["relax_pdf_source_reason"])
 
     st.divider()
 

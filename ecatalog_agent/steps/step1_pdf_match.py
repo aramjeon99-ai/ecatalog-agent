@@ -7,6 +7,7 @@ from typing import Any
 from ecatalog_agent.models.state import ErrorFlag, NPRRecord, StepResult
 from ecatalog_agent.tools.pdf_parser import pdf_parse
 from ecatalog_agent.utils.fuzzy_match import partial_ratio, token_sort_ratio
+from ecatalog_agent.utils.order_code_pdf_match import model_matches_order_code_table, normalize_model_compact
 from ecatalog_agent.utils.text_normalize import normalize_maker, normalize_model
 
 
@@ -25,9 +26,8 @@ def step1_pdf_parse_and_match(
     model_norm = normalize_model(record.model_name)
     maker_norm = normalize_maker(record.maker_name)
 
-    # MVP heuristic: compare against a limited prefix to keep it fast,
-    # but big enough to include model/maker evidence in most catalogs.
-    text_sample = text[:40000].lower()
+    # 카탈로그 형번 표는 뒤쪽 페이지에 있을 수 있어 상한을 넉넉히 둠.
+    text_sample = text[:200000].lower()
     text_compact = re.sub(r"[^a-z0-9]+", "", text_sample)
 
     model_compact = re.sub(r"[^a-z0-9]+", "", model_norm)
@@ -45,9 +45,13 @@ def step1_pdf_parse_and_match(
         partial_ratio(maker_norm, text_sample),
     )
 
+    pdf_full_compact = normalize_model_compact(text)
+    order_code_ok = model_matches_order_code_table(record.model_name, pdf_full_compact)
+
     # If neither model nor maker appears directly in the extracted text,
     # treat it as "evidence unavailable" to avoid false REJECTED.
-    if text and not model_found and not maker_found:
+    # 형번 표 분해 일치면 모델 근거가 있는 것으로 본다.
+    if text and not model_found and not maker_found and not order_code_ok:
         elapsed_ms = int((time.time() - start) * 1000)
         step_result = StepResult(
             step_name="STEP1",
@@ -67,10 +71,10 @@ def step1_pdf_parse_and_match(
             llm_prompt=None,
             llm_response=None,
         )
-        parsed_evidence = {"pdf_text_sample": text_sample[:12000], "pdf_text_len": len(text)}
+        parsed_evidence = {"pdf_text_sample": text_sample[:50000], "pdf_text_len": len(text)}
         return step_result, parsed_evidence
 
-    if model_score < fuzzy_model_threshold:
+    if model_score < fuzzy_model_threshold and not order_code_ok:
         flags.append(
             ErrorFlag(
                 code="ERR_MODEL_MISMATCH",
@@ -101,6 +105,7 @@ def step1_pdf_parse_and_match(
         details={
             "model_score": model_score,
             "maker_score": maker_score,
+            "order_code_table_match": order_code_ok,
             "is_image_based": parsed.get("is_image_based"),
             "pages": parsed.get("pages"),
         },
@@ -110,6 +115,6 @@ def step1_pdf_parse_and_match(
         llm_response=None,
     )
 
-    parsed_evidence = {"pdf_text_sample": text_sample[:12000], "pdf_text_len": len(text)}
+    parsed_evidence = {"pdf_text_sample": text_sample[:50000], "pdf_text_len": len(text)}
     return step_result, parsed_evidence
 
