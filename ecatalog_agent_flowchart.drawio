@@ -1,0 +1,675 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mxGraphModel dx="1422" dy="762" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1654" pageHeight="2339" math="0" shadow="0">
+  <root>
+    <mxCell id="0" />
+    <mxCell id="1" parent="0" />
+
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <!-- TITLE -->
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <mxCell id="title" value="e-Catalog 특정사양품 자동 승인 Agent — 프로세스 플로우차트" style="text;html=1;strokeColor=none;fillColor=#1E3A5F;align=center;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontColor=#FFFFFF;fontSize=16;fontStyle=1;" vertex="1" parent="1">
+      <mxGeometry x="280" y="20" width="1080" height="44" as="geometry" />
+    </mxCell>
+
+    <!-- LEGEND -->
+    <mxCell id="leg_title" value="범례" style="text;html=1;strokeColor=#1E3A5F;fillColor=#1E3A5F;align=center;verticalAlign=middle;fontColor=#FFFFFF;fontSize=11;fontStyle=1;" vertex="1" parent="1">
+      <mxGeometry x="30" y="20" width="200" height="24" as="geometry" />
+    </mxCell>
+    <mxCell id="leg_start" value="시작/종료 (터미네이터)" style="ellipse;whiteSpace=wrap;html=1;fillColor=#1E3A5F;fontColor=#FFFFFF;strokeColor=#1E3A5F;fontSize=9;" vertex="1" parent="1">
+      <mxGeometry x="30" y="50" width="200" height="28" as="geometry" />
+    </mxCell>
+    <mxCell id="leg_proc" value="처리 (프로세스)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#DAE8FC;strokeColor=#6C8EBF;fontSize=9;" vertex="1" parent="1">
+      <mxGeometry x="30" y="86" width="200" height="28" as="geometry" />
+    </mxCell>
+    <mxCell id="leg_dec" value="판단 (다이아몬드)" style="rhombus;whiteSpace=wrap;html=1;fillColor=#FFE6CC;strokeColor=#D6A023;fontSize=9;" vertex="1" parent="1">
+      <mxGeometry x="30" y="122" width="200" height="36" as="geometry" />
+    </mxCell>
+    <mxCell id="leg_io" value="입출력 (평행사변형)" style="shape=parallelogram;perimeter=parallelogramPerimeter;whiteSpace=wrap;html=1;fillColor=#D5E8D4;strokeColor=#82B366;fontSize=9;" vertex="1" parent="1">
+      <mxGeometry x="30" y="166" width="200" height="28" as="geometry" />
+    </mxCell>
+    <mxCell id="leg_doc" value="문서 (Document)" style="shape=document;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=0.27;fillColor=#f5f5f5;strokeColor=#666666;fontColor=#333333;fontSize=9;" vertex="1" parent="1">
+      <mxGeometry x="30" y="202" width="200" height="32" as="geometry" />
+    </mxCell>
+    <mxCell id="leg_db" value="데이터베이스" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=10;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=9;" vertex="1" parent="1">
+      <mxGeometry x="30" y="242" width="200" height="36" as="geometry" />
+    </mxCell>
+    <mxCell id="leg_manual" value="수동 처리 (사람 확인)" style="shape=trapezoid;perimeter=trapezoidPerimeter;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=9;flipV=1;" vertex="1" parent="1">
+      <mxGeometry x="30" y="286" width="200" height="28" as="geometry" />
+    </mxCell>
+    <mxCell id="leg_connector" value="커넥터 (연결점)" style="ellipse;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#D6B656;fontSize=9;" vertex="1" parent="1">
+      <mxGeometry x="30" y="322" width="200" height="28" as="geometry" />
+    </mxCell>
+
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <!-- MAIN FLOW — Column X=580 center -->
+    <!-- ═══════════════════════════════════════════════════════════ -->
+
+    <!-- [START] -->
+    <mxCell id="start" value="시작" style="ellipse;whiteSpace=wrap;html=1;fillColor=#1E3A5F;fontColor=#FFFFFF;strokeColor=#1E3A5F;fontSize=13;fontStyle=1;" vertex="1" parent="1">
+      <mxGeometry x="530" y="80" width="140" height="44" as="geometry" />
+    </mxCell>
+
+    <!-- ─── STEP 0 ─── -->
+    <mxCell id="s0_label" value="STEP 0 — NPR 신청 접수" style="text;html=1;strokeColor=none;fillColor=#1E3A5F;align=left;verticalAlign=middle;fontColor=#FFFFFF;fontSize=11;fontStyle=1;" vertex="1" parent="1">
+      <mxGeometry x="280" y="148" width="240" height="28" as="geometry" />
+    </mxCell>
+
+    <mxCell id="s0_io" value="입력: 엑셀 파일 읽기&#xa;(행 순차 처리 — 모델명, 메이커, 사양값, 첨부PDF 경로)" style="shape=parallelogram;perimeter=parallelogramPerimeter;whiteSpace=wrap;html=1;fillColor=#D5E8D4;strokeColor=#82B366;fontSize=10;" vertex="1" parent="1">
+      <mxGeometry x="460" y="148" width="280" height="48" as="geometry" />
+    </mxCell>
+
+    <mxCell id="s0_dec_field" value="필수 입력항목&#xa;누락 여부?" style="rhombus;whiteSpace=wrap;html=1;fillColor=#FFE6CC;strokeColor=#D6A023;fontSize=10;" vertex="1" parent="1">
+      <mxGeometry x="515" y="218" width="170" height="60" as="geometry" />
+    </mxCell>
+
+    <mxCell id="s0_dec_pdf" value="첨부 PDF&#xa;파일 존재?" style="rhombus;whiteSpace=wrap;html=1;fillColor=#FFE6CC;strokeColor=#D6A023;fontSize=10;" vertex="1" parent="1">
+      <mxGeometry x="515" y="306" width="170" height="60" as="geometry" />
+    </mxCell>
+
+    <!-- 누락 → 반려 (오른쪽) -->
+    <mxCell id="s0_err_field" value="오류 플래그 설정&#xa;[필수항목 누락]" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;" vertex="1" parent="1">
+      <mxGeometry x="800" y="226" width="160" height="44" as="geometry" />
+    </mxCell>
+
+    <!-- PDF 없음 → 반려 -->
+    <mxCell id="s0_err_pdf" value="오류 플래그 설정&#xa;[PDF 첨부 없음]" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;" vertex="1" parent="1">
+      <mxGeometry x="800" y="314" width="160" height="44" as="geometry" />
+    </mxCell>
+
+    <!-- ─── STEP 1 ─── -->
+    <mxCell id="s1_label" value="STEP 1 — PDF 파싱 &amp; 입력값 대조" style="text;html=1;strokeColor=none;fillColor=#2E5FA3;align=left;verticalAlign=middle;fontColor=#FFFFFF;fontSize=11;fontStyle=1;" vertex="1" parent="1">
+      <mxGeometry x="280" y="392" width="240" height="28" as="geometry" />
+    </mxCell>
+
+    <mxCell id="s1_parse" value="PDF 파싱 실행&#xa;(pdfplumber / OCR)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#DAE8FC;strokeColor=#6C8EBF;fontSize=10;" vertex="1" parent="1">
+      <mxGeometry x="490" y="392" width="220" height="44" as="geometry" />
+    </mxCell>
+
+    <mxCell id="s1_dec_model" value="모델명&#xa;일치?" style="rhombus;whiteSpace=wrap;html=1;fillColor=#FFE6CC;strokeColor=#D6A023;fontSize=10;" vertex="1" parent="1">
+      <mxGeometry x="515" y="458" width="170" height="60" as="geometry" />
+    </mxCell>
+
+    <mxCell id="s1_ordercode" value="형번(Order Code)&#xa;체계 여부?" style="rhombus;whiteSpace=wrap;html=1;fillColor=#FFE6CC;strokeColor=#D6A023;fontSize=10;" vertex="1" parent="1">
+      <mxGeometry x="280" y="458" width="170" height="60" as="geometry" />
+    </mxCell>
+
+    <mxCell id="s1_llm_code" value="LLM: 형번 체계에서&#xa;해당 코드 유효성 검토" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#DAE8FC;strokeColor=#6C8EBF;fontSize=10;" vertex="1" parent="1">
+      <mxGeometry x="120" y="458" width="148" height="60" as="geometry" />
+    </mxCell>
+
+    <mxCell id="s1_dec_maker" value="메이커명&#xa;일치?" style="rhombus;whiteSpace=wrap;html=1;fillColor=#FFE6CC;strokeColor=#D6A023;fontSize=10;" vertex="1" parent="1">
+      <mxGeometry x="515" y="546" width="170" height="60" as="geometry" />
+    </mxCell>
+
+    <mxCell id="s1_err_model" value="불일치 플래그&#xa;[모델명 불일치]" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;" vertex="1" parent="1">
+      <mxGeometry x="800" y="466" width="160" height="44" as="geometry" />
+    </mxCell>
+
+    <mxCell id="s1_err_maker" value="불일치 플래그&#xa;[메이커명 불일치]" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;" vertex="1" parent="1">
+      <mxGeometry x="800" y="554" width="160" height="44" as="geometry" />
+    </mxCell>
+
+    <!-- ─── STEP 2 ─── -->
+    <mxCell id="s2_label" value="STEP 2 — 검증자료 신뢰성 확인" style="text;html=1;strokeColor=none;fillColor=#2E5FA3;align=left;verticalAlign=middle;fontColor=#FFFFFF;fontSize=11;fontStyle=1;" vertex="1" parent="1">
+      <mxGeometry x="280" y="634" width="240" height="28" as="geometry" />
+    </mxCell>
+
+    <mxCell id="s2_doctype" value="문서 유형 분류&#xa;(LLM + 키워드 룰)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#DAE8FC;strokeColor=#6C8EBF;fontSize=10;" vertex="1" parent="1">
+      <mxGeometry x="490" y="634" width="220" height="44" as="geometry" />
+    </mxCell>
+
+    <mxCell id="s2_dec_quote" value="견적서/발주서&#xa;여부?" style="rhombus;whiteSpace=wrap;html=1;fillColor=#FFE6CC;strokeColor=#D6A023;fontSize=10;" vertex="1" parent="1">
+      <mxGeometry x="515" y="700" width="170" height="60" as="geometry" />
+    </mxCell>
+
+    <mxCell id="s2_err_quote" value="반려 플래그&#xa;[견적서 — 신뢰 불가]" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;" vertex="1" parent="1">
+      <mxGeometry x="800" y="708" width="160" height="44" as="geometry" />
+    </mxCell>
+
+    <mxCell id="s2_logo" value="Vision LLM: 로고·상호&#xa;존재 여부 감지" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#DAE8FC;strokeColor=#6C8EBF;fontSize=10;" vertex="1" parent="1">
+      <mxGeometry x="490" y="782" width="220" height="44" as="geometry" />
+    </mxCell>
+
+    <mxCell id="s2_dec_logo" value="제조사 로고/상호&#xa;확인됨?" style="rhombus;whiteSpace=wrap;html=1;fillColor=#FFE6CC;strokeColor=#D6A023;fontSize=10;" vertex="1" parent="1">
+      <mxGeometry x="515" y="848" width="170" height="60" as="geometry" />
+    </mxCell>
+
+    <mxCell id="s2_score" value="신뢰성 점수 산출&#xa;(로고+문서유형+발급기관)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#DAE8FC;strokeColor=#6C8EBF;fontSize=10;" vertex="1" parent="1">
+      <mxGeometry x="490" y="930" width="220" height="44" as="geometry" />
+    </mxCell>
+
+    <mxCell id="s2_dec_score" value="신뢰성 점수&#xa;≥ 임계값?" style="rhombus;whiteSpace=wrap;html=1;fillColor=#FFE6CC;strokeColor=#D6A023;fontSize=10;" vertex="1" parent="1">
+      <mxGeometry x="515" y="996" width="170" height="60" as="geometry" />
+    </mxCell>
+
+    <mxCell id="s2_err_logo" value="플래그&#xa;[로고·상호 미확인]" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;" vertex="1" parent="1">
+      <mxGeometry x="800" y="856" width="160" height="44" as="geometry" />
+    </mxCell>
+
+    <mxCell id="s2_err_score" value="플래그&#xa;[신뢰성 점수 미달]" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;" vertex="1" parent="1">
+      <mxGeometry x="800" y="1004" width="160" height="44" as="geometry" />
+    </mxCell>
+
+    <!-- ─── STEP 3 ─── -->
+    <mxCell id="s3_label" value="STEP 3 — 사양값 추출 및 대조" style="text;html=1;strokeColor=none;fillColor=#2E5FA3;align=left;verticalAlign=middle;fontColor=#FFFFFF;fontSize=11;fontStyle=1;" vertex="1" parent="1">
+      <mxGeometry x="280" y="1082" width="240" height="28" as="geometry" />
+    </mxCell>
+
+    <mxCell id="s3_extract" value="OCR + LLM: 사양항목-값&#xa;구조화 추출 (JSON)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#DAE8FC;strokeColor=#6C8EBF;fontSize=10;" vertex="1" parent="1">
+      <mxGeometry x="490" y="1082" width="220" height="44" as="geometry" />
+    </mxCell>
+
+    <mxCell id="s3_dec_complete" value="완성도&#xa;(Completeness)&#xa;= 100%?" style="rhombus;whiteSpace=wrap;html=1;fillColor=#FFE6CC;strokeColor=#D6A023;fontSize=10;" vertex="1" parent="1">
+      <mxGeometry x="515" y="1148" width="170" height="70" as="geometry" />
+    </mxCell>
+
+    <mxCell id="s3_compare" value="항목별 수치 1:1 매핑 비교&#xa;(입력값 ↔ PDF 추출값)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#DAE8FC;strokeColor=#6C8EBF;fontSize=10;" vertex="1" parent="1">
+      <mxGeometry x="490" y="1242" width="220" height="44" as="geometry" />
+    </mxCell>
+
+    <mxCell id="s3_dec_match" value="일치율&#xa;≥ 95%?" style="rhombus;whiteSpace=wrap;html=1;fillColor=#FFE6CC;strokeColor=#D6A023;fontSize=10;" vertex="1" parent="1">
+      <mxGeometry x="515" y="1308" width="170" height="60" as="geometry" />
+    </mxCell>
+
+    <mxCell id="s3_err_complete" value="플래그&#xa;[완성도 미달 — 항목 누락]" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;" vertex="1" parent="1">
+      <mxGeometry x="800" y="1158" width="160" height="44" as="geometry" />
+    </mxCell>
+
+    <mxCell id="s3_err_match" value="플래그&#xa;[사양값 일치율 95% 미달]" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;" vertex="1" parent="1">
+      <mxGeometry x="800" y="1316" width="160" height="44" as="geometry" />
+    </mxCell>
+
+    <!-- ─── STEP 4 ─── -->
+    <mxCell id="s4_label" value="STEP 4 — 제조사 여부 확인 (AI 에이전트)" style="text;html=1;strokeColor=none;fillColor=#2E5FA3;align=left;verticalAlign=middle;fontColor=#FFFFFF;fontSize=11;fontStyle=1;" vertex="1" parent="1">
+      <mxGeometry x="280" y="1396" width="280" height="28" as="geometry" />
+    </mxCell>
+
+    <mxCell id="s4_dec_foreign" value="외국계&#xa;기업?" style="rhombus;whiteSpace=wrap;html=1;fillColor=#FFE6CC;strokeColor=#D6A023;fontSize=10;" vertex="1" parent="1">
+      <mxGeometry x="515" y="1396" width="170" height="60" as="geometry" />
+    </mxCell>
+
+    <!-- 외국계 → 웹검색 -->
+    <mxCell id="s4_web_foreign" value="에이전트: 웹 검색으로&#xa;제조사 여부 판별 (LLM)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#DAE8FC;strokeColor=#6C8EBF;fontSize=10;" vertex="1" parent="1">
+      <mxGeometry x="280" y="1396" width="218" height="60" as="geometry" />
+    </mxCell>
+
+    <!-- 국내 → URL 크롤링 -->
+    <mxCell id="s4_url_check" value="홈페이지 URL 확인" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#DAE8FC;strokeColor=#6C8EBF;fontSize=10;" vertex="1" parent="1">
+      <mxGeometry x="490" y="1480" width="220" height="36" as="geometry" />
+    </mxCell>
+
+    <mxCell id="s4_dec_url" value="URL&#xa;있음?" style="rhombus;whiteSpace=wrap;html=1;fillColor=#FFE6CC;strokeColor=#D6A023;fontSize=10;" vertex="1" parent="1">
+      <mxGeometry x="515" y="1534" width="170" height="54" as="geometry" />
+    </mxCell>
+
+    <mxCell id="s4_search_url" value="에이전트: 검색으로&#xa;홈페이지 URL 탐색" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#DAE8FC;strokeColor=#6C8EBF;fontSize=10;" vertex="1" parent="1">
+      <mxGeometry x="280" y="1542" width="218" height="38" as="geometry" />
+    </mxCell>
+
+    <mxCell id="s4_crawl" value="에이전트: 홈페이지 하단(Footer)&#xa;크롤링 → 사업자등록번호 추출" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#DAE8FC;strokeColor=#6C8EBF;fontSize=10;" vertex="1" parent="1">
+      <mxGeometry x="490" y="1610" width="220" height="44" as="geometry" />
+    </mxCell>
+
+    <mxCell id="s4_dec_bizno" value="사업자등록번호&#xa;확보?" style="rhombus;whiteSpace=wrap;html=1;fillColor=#FFE6CC;strokeColor=#D6A023;fontSize=10;" vertex="1" parent="1">
+      <mxGeometry x="515" y="1676" width="170" height="60" as="geometry" />
+    </mxCell>
+
+    <mxCell id="s4_api" value="신용평가사 API 호출&#xa;→ 업태(제조업) 확인" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#DAE8FC;strokeColor=#6C8EBF;fontSize=10;" vertex="1" parent="1">
+      <mxGeometry x="490" y="1758" width="220" height="44" as="geometry" />
+    </mxCell>
+
+    <mxCell id="s4_dec_mfg" value="제조업&#xa;업태 확인?" style="rhombus;whiteSpace=wrap;html=1;fillColor=#FFE6CC;strokeColor=#D6A023;fontSize=10;" vertex="1" parent="1">
+      <mxGeometry x="515" y="1824" width="170" height="60" as="geometry" />
+    </mxCell>
+
+    <mxCell id="s4_dec_web_ok" value="제조사 가능성&#xa;높음?" style="rhombus;whiteSpace=wrap;html=1;fillColor=#FFE6CC;strokeColor=#D6A023;fontSize=10;" vertex="1" parent="1">
+      <mxGeometry x="100" y="1476" width="160" height="60" as="geometry" />
+    </mxCell>
+
+    <mxCell id="s4_err_nobiz" value="플래그&#xa;[사업자번호 확보 실패]" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;" vertex="1" parent="1">
+      <mxGeometry x="800" y="1684" width="160" height="44" as="geometry" />
+    </mxCell>
+
+    <mxCell id="s4_err_notmfg" value="플래그&#xa;[제조업 업태 미확인]" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;" vertex="1" parent="1">
+      <mxGeometry x="800" y="1832" width="160" height="44" as="geometry" />
+    </mxCell>
+
+    <mxCell id="s4_err_nomaker" value="플래그&#xa;[제조사 판별 불가]" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;" vertex="1" parent="1">
+      <mxGeometry x="800" y="1484" width="160" height="44" as="geometry" />
+    </mxCell>
+
+    <!-- ─── STEP 5 ─── -->
+    <mxCell id="s5_label" value="STEP 5 — 동일품 여부 검증" style="text;html=1;strokeColor=none;fillColor=#2E5FA3;align=left;verticalAlign=middle;fontColor=#FFFFFF;fontSize=11;fontStyle=1;" vertex="1" parent="1">
+      <mxGeometry x="280" y="1916" width="240" height="28" as="geometry" />
+    </mxCell>
+
+    <mxCell id="s5_preproc" value="모델명 전처리&#xa;(-, _, / → space / 대소문자 통일)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#DAE8FC;strokeColor=#6C8EBF;fontSize=10;" vertex="1" parent="1">
+      <mxGeometry x="490" y="1916" width="220" height="44" as="geometry" />
+    </mxCell>
+
+    <mxCell id="s5_normalize" value="메이커명 표준화&#xa;(Co.,Ltd. 제거, 대소문자 통일)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#DAE8FC;strokeColor=#6C8EBF;fontSize=10;" vertex="1" parent="1">
+      <mxGeometry x="490" y="1976" width="220" height="44" as="geometry" />
+    </mxCell>
+
+    <mxCell id="s5_search" value="POS-Appia Smart API 호출&#xa;(모델명 AND 메이커 검색)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#DAE8FC;strokeColor=#6C8EBF;fontSize=10;" vertex="1" parent="1">
+      <mxGeometry x="490" y="2036" width="220" height="44" as="geometry" />
+    </mxCell>
+
+    <mxCell id="s5_dec_dup" value="동일품&#xa;검색 결과&#xa;존재?" style="rhombus;whiteSpace=wrap;html=1;fillColor=#FFE6CC;strokeColor=#D6A023;fontSize=10;" vertex="1" parent="1">
+      <mxGeometry x="515" y="2102" width="170" height="70" as="geometry" />
+    </mxCell>
+
+    <mxCell id="s5_err_dup" value="반려 플래그&#xa;[동일품 기등록 존재]" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;" vertex="1" parent="1">
+      <mxGeometry x="800" y="2110" width="160" height="44" as="geometry" />
+    </mxCell>
+
+    <!-- ─── STEP 6 ─── -->
+    <mxCell id="s6_label" value="STEP 6 — 최종 판단" style="text;html=1;strokeColor=none;fillColor=#1E3A5F;align=left;verticalAlign=middle;fontColor=#FFFFFF;fontSize=11;fontStyle=1;" vertex="1" parent="1">
+      <mxGeometry x="280" y="2200" width="240" height="28" as="geometry" />
+    </mxCell>
+
+    <mxCell id="s6_aggregate" value="전 단계 결과 종합&#xa;(플래그 목록 집계)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#DAE8FC;strokeColor=#6C8EBF;fontSize=10;" vertex="1" parent="1">
+      <mxGeometry x="490" y="2200" width="220" height="44" as="geometry" />
+    </mxCell>
+
+    <mxCell id="s6_dec_flag" value="오류/반려&#xa;플래그 존재?" style="rhombus;whiteSpace=wrap;html=1;fillColor=#FFE6CC;strokeColor=#D6A023;fontSize=10;" vertex="1" parent="1">
+      <mxGeometry x="515" y="2266" width="170" height="60" as="geometry" />
+    </mxCell>
+
+    <mxCell id="s6_dec_ambig" value="LLM 신뢰도&#xa;낮은 항목&#xa;존재?" style="rhombus;whiteSpace=wrap;html=1;fillColor=#FFE6CC;strokeColor=#D6A023;fontSize=10;" vertex="1" parent="1">
+      <mxGeometry x="515" y="2358" width="170" height="70" as="geometry" />
+    </mxCell>
+
+    <!-- 자동 회송 -->
+    <mxCell id="s6_reject" value="자동 회송 처리&#xa;(사유: 정해진 반려 코드 매핑)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;fontStyle=1;" vertex="1" parent="1">
+      <mxGeometry x="800" y="2274" width="180" height="44" as="geometry" />
+    </mxCell>
+
+    <!-- 사람 확인 -->
+    <mxCell id="s6_human" value="담당자 검토 대기열 이관&#xa;(보류 알림 발송)" style="shape=trapezoid;perimeter=trapezoidPerimeter;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#D6A023;fontSize=10;fontStyle=1;flipV=1;" vertex="1" parent="1">
+      <mxGeometry x="800" y="2366" width="180" height="54" as="geometry" />
+    </mxCell>
+
+    <!-- 자동 승인 -->
+    <mxCell id="s6_approve" value="자동 승인 처리&#xa;(상태값 갱신)" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#D5E8D4;strokeColor=#82B366;fontSize=10;fontStyle=1;" vertex="1" parent="1">
+      <mxGeometry x="490" y="2460" width="220" height="44" as="geometry" />
+    </mxCell>
+
+    <!-- ─── STEP 6 공통 후처리 ─── -->
+    <mxCell id="s6_report" value="검토표 자동 생성&#xa;(단계별 결과 + 반려 사유 LLM 요약)" style="shape=document;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=0.27;fillColor=#f5f5f5;strokeColor=#666666;fontColor=#333333;fontSize=10;" vertex="1" parent="1">
+      <mxGeometry x="490" y="2528" width="220" height="48" as="geometry" />
+    </mxCell>
+
+    <mxCell id="s6_log" value="감사 로그 DB 저장&#xa;(LLM 판단 근거 포함)" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=10;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=10;" vertex="1" parent="1">
+      <mxGeometry x="490" y="2598" width="220" height="48" as="geometry" />
+    </mxCell>
+
+    <mxCell id="s6_dec_more" value="다음 행&#xa;존재?" style="rhombus;whiteSpace=wrap;html=1;fillColor=#FFE6CC;strokeColor=#D6A023;fontSize=10;" vertex="1" parent="1">
+      <mxGeometry x="515" y="2668" width="170" height="60" as="geometry" />
+    </mxCell>
+
+    <!-- END -->
+    <mxCell id="end" value="종료" style="ellipse;whiteSpace=wrap;html=1;fillColor=#1E3A5F;fontColor=#FFFFFF;strokeColor=#1E3A5F;fontSize=13;fontStyle=1;" vertex="1" parent="1">
+      <mxGeometry x="530" y="2756" width="140" height="44" as="geometry" />
+    </mxCell>
+
+    <!-- 다음 행 있으면 → Step 0로 루프백 커넥터 -->
+    <mxCell id="s6_loopback_proc" value="다음 행으로 이동" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#DAE8FC;strokeColor=#6C8EBF;fontSize=10;" vertex="1" parent="1">
+      <mxGeometry x="280" y="2676" width="200" height="44" as="geometry" />
+    </mxCell>
+
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <!-- REJECT AGGREGATION BOX (우측 오류 흐름 집결) -->
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <mxCell id="err_merge" value="오류 플래그 수집&#xa;(반려 사유 목록)" style="shape=parallelogram;perimeter=parallelogramPerimeter;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;fontStyle=1;" vertex="1" parent="1">
+      <mxGeometry x="1020" y="1200" width="180" height="48" as="geometry" />
+    </mxCell>
+    <mxCell id="err_merge_note" value="← 각 Step에서 발생한&#xa;모든 플래그가 여기 집결&#xa;→ Step 6 판단에 사용" style="text;html=1;strokeColor=#b85450;fillColor=#fff0f0;align=left;verticalAlign=middle;fontSize=9;" vertex="1" parent="1">
+      <mxGeometry x="1020" y="1260" width="180" height="60" as="geometry" />
+    </mxCell>
+
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <!-- CONNECTOR NODES (페이지 내 연결점) -->
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <mxCell id="con_a" value="A" style="ellipse;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#D6B656;fontSize=11;fontStyle=1;" vertex="1" parent="1">
+      <mxGeometry x="566" y="376" width="68" height="28" as="geometry" />
+    </mxCell>
+
+    <mxCell id="con_b" value="B" style="ellipse;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#D6B656;fontSize=11;fontStyle=1;" vertex="1" parent="1">
+      <mxGeometry x="566" y="624" width="68" height="28" as="geometry" />
+    </mxCell>
+
+    <mxCell id="con_c" value="C" style="ellipse;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#D6B656;fontSize=11;fontStyle=1;" vertex="1" parent="1">
+      <mxGeometry x="566" y="1072" width="68" height="28" as="geometry" />
+    </mxCell>
+
+    <mxCell id="con_d" value="D" style="ellipse;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#D6B656;fontSize=11;fontStyle=1;" vertex="1" parent="1">
+      <mxGeometry x="566" y="1384" width="68" height="28" as="geometry" />
+    </mxCell>
+
+    <mxCell id="con_e" value="E" style="ellipse;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#D6B656;fontSize=11;fontStyle=1;" vertex="1" parent="1">
+      <mxGeometry x="566" y="1904" width="68" height="28" as="geometry" />
+    </mxCell>
+
+    <mxCell id="con_f" value="F" style="ellipse;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#D6B656;fontSize=11;fontStyle=1;" vertex="1" parent="1">
+      <mxGeometry x="566" y="2190" width="68" height="28" as="geometry" />
+    </mxCell>
+
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <!-- EDGES / ARROWS -->
+    <!-- ═══════════════════════════════════════════════════════════ -->
+
+    <!-- START → s0_io -->
+    <mxCell id="e1" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="start" target="s0_io" parent="1"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+    <!-- s0_io → s0_dec_field -->
+    <mxCell id="e2" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="s0_io" target="s0_dec_field" parent="1"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+    <!-- s0_dec_field YES → s0_dec_pdf -->
+    <mxCell id="e3" value="예" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="s0_dec_field" target="s0_dec_pdf" parent="1"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+    <!-- s0_dec_field NO → s0_err_field -->
+    <mxCell id="e4" value="아니오" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="s0_dec_field" target="s0_err_field" parent="1"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+    <!-- s0_dec_pdf YES → con_a -->
+    <mxCell id="e5" value="예" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="s0_dec_pdf" target="con_a" parent="1"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+    <!-- s0_dec_pdf NO → s0_err_pdf -->
+    <mxCell id="e6" value="아니오" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="s0_dec_pdf" target="s0_err_pdf" parent="1"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+    <!-- con_a → s1_parse -->
+    <mxCell id="e7" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="con_a" target="s1_parse" parent="1"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+    <!-- s1_parse → s1_dec_model -->
+    <mxCell id="e8" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="s1_parse" target="s1_dec_model" parent="1"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+    <!-- s1_dec_model YES → s1_dec_maker -->
+    <mxCell id="e9" value="예" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="s1_dec_model" target="s1_dec_maker" parent="1"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+    <!-- s1_dec_model NO → s1_ordercode 분기 -->
+    <mxCell id="e10" value="아니오&#xa;(형번체계?)" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="s1_dec_model" target="s1_ordercode" parent="1">
+      <mxGeometry relative="1" as="geometry">
+        <Array as="points"><mxPoint x="515" y="488"/><mxPoint x="365" y="488"/></Array>
+      </mxGeometry>
+    </mxCell>
+
+    <!-- s1_ordercode YES → s1_llm_code -->
+    <mxCell id="e11" value="예" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="s1_ordercode" target="s1_llm_code" parent="1"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+    <!-- s1_ordercode NO → s1_err_model -->
+    <mxCell id="e12" value="아니오" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="s1_ordercode" target="s1_err_model" parent="1">
+      <mxGeometry relative="1" as="geometry">
+        <Array as="points"><mxPoint x="365" y="512"/><mxPoint x="880" y="512"/></Array>
+      </mxGeometry>
+    </mxCell>
+
+    <!-- s1_llm_code → s1_dec_maker (합류) -->
+    <mxCell id="e13" value="유효" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="s1_llm_code" target="s1_dec_maker" parent="1">
+      <mxGeometry relative="1" as="geometry">
+        <Array as="points"><mxPoint x="194" y="560"/><mxPoint x="600" y="560"/></Array>
+      </mxGeometry>
+    </mxCell>
+
+    <!-- s1_llm_code 무효 → s1_err_model -->
+    <mxCell id="e13b" value="무효" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="s1_llm_code" target="s1_err_model" parent="1">
+      <mxGeometry relative="1" as="geometry">
+        <Array as="points"><mxPoint x="268" y="430"/><mxPoint x="880" y="430"/><mxPoint x="880" y="488"/></Array>
+      </mxGeometry>
+    </mxCell>
+
+    <!-- s1_dec_maker YES → con_b -->
+    <mxCell id="e14" value="예" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="s1_dec_maker" target="con_b" parent="1"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+    <!-- s1_dec_maker NO → s1_err_maker -->
+    <mxCell id="e15" value="아니오" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="s1_dec_maker" target="s1_err_maker" parent="1"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+    <!-- con_b → s2_doctype -->
+    <mxCell id="e16" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="con_b" target="s2_doctype" parent="1"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+    <!-- s2_doctype → s2_dec_quote -->
+    <mxCell id="e17" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="s2_doctype" target="s2_dec_quote" parent="1"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+    <!-- s2_dec_quote YES → s2_err_quote -->
+    <mxCell id="e18" value="예(견적서)" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="s2_dec_quote" target="s2_err_quote" parent="1"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+    <!-- s2_dec_quote NO → s2_logo -->
+    <mxCell id="e19" value="아니오" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="s2_dec_quote" target="s2_logo" parent="1"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+    <!-- s2_logo → s2_dec_logo -->
+    <mxCell id="e20" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="s2_logo" target="s2_dec_logo" parent="1"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+    <!-- s2_dec_logo YES → s2_score -->
+    <mxCell id="e21" value="예" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="s2_dec_logo" target="s2_score" parent="1"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+    <!-- s2_dec_logo NO → s2_err_logo -->
+    <mxCell id="e22" value="아니오" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="s2_dec_logo" target="s2_err_logo" parent="1"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+    <!-- s2_score → s2_dec_score -->
+    <mxCell id="e23" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="s2_score" target="s2_dec_score" parent="1"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+    <!-- s2_dec_score YES → con_c -->
+    <mxCell id="e24" value="예" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="s2_dec_score" target="con_c" parent="1"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+    <!-- s2_dec_score NO → s2_err_score -->
+    <mxCell id="e25" value="아니오" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="s2_dec_score" target="s2_err_score" parent="1"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+    <!-- con_c → s3_extract -->
+    <mxCell id="e26" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="con_c" target="s3_extract" parent="1"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+    <!-- s3_extract → s3_dec_complete -->
+    <mxCell id="e27" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="s3_extract" target="s3_dec_complete" parent="1"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+    <!-- s3_dec_complete YES → s3_compare -->
+    <mxCell id="e28" value="예" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="s3_dec_complete" target="s3_compare" parent="1"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+    <!-- s3_dec_complete NO → s3_err_complete -->
+    <mxCell id="e29" value="아니오" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="s3_dec_complete" target="s3_err_complete" parent="1"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+    <!-- s3_compare → s3_dec_match -->
+    <mxCell id="e30" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="s3_compare" target="s3_dec_match" parent="1"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+    <!-- s3_dec_match YES → con_d -->
+    <mxCell id="e31" value="예" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="s3_dec_match" target="con_d" parent="1"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+    <!-- s3_dec_match NO → s3_err_match -->
+    <mxCell id="e32" value="아니오" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="s3_dec_match" target="s3_err_match" parent="1"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+    <!-- con_d → s4_dec_foreign -->
+    <mxCell id="e33" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="con_d" target="s4_dec_foreign" parent="1"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+    <!-- s4_dec_foreign YES(외국계) → s4_web_foreign -->
+    <mxCell id="e34" value="예(외국계)" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="s4_dec_foreign" target="s4_web_foreign" parent="1">
+      <mxGeometry relative="1" as="geometry">
+        <Array as="points"><mxPoint x="515" y="1426"/><mxPoint x="389" y="1426"/></Array>
+      </mxGeometry>
+    </mxCell>
+
+    <!-- s4_dec_foreign NO(국내) → s4_url_check -->
+    <mxCell id="e35" value="아니오(국내)" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="s4_dec_foreign" target="s4_url_check" parent="1"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+    <!-- s4_web_foreign → s4_dec_web_ok -->
+    <mxCell id="e36" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="s4_web_foreign" target="s4_dec_web_ok" parent="1">
+      <mxGeometry relative="1" as="geometry">
+        <Array as="points"><mxPoint x="389" y="1506"/><mxPoint x="180" y="1506"/></Array>
+      </mxGeometry>
+    </mxCell>
+
+    <!-- s4_dec_web_ok YES → con_e (합류) -->
+    <mxCell id="e37" value="예" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="s4_dec_web_ok" target="con_e" parent="1">
+      <mxGeometry relative="1" as="geometry">
+        <Array as="points"><mxPoint x="180" y="1918"/><mxPoint x="600" y="1918"/></Array>
+      </mxGeometry>
+    </mxCell>
+
+    <!-- s4_dec_web_ok NO → s4_err_nomaker -->
+    <mxCell id="e38" value="아니오" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="s4_dec_web_ok" target="s4_err_nomaker" parent="1">
+      <mxGeometry relative="1" as="geometry">
+        <Array as="points"><mxPoint x="260" y="1506"/><mxPoint x="880" y="1506"/></Array>
+      </mxGeometry>
+    </mxCell>
+
+    <!-- s4_url_check → s4_dec_url -->
+    <mxCell id="e39" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="s4_url_check" target="s4_dec_url" parent="1"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+    <!-- s4_dec_url NO → s4_search_url -->
+    <mxCell id="e40" value="아니오" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="s4_dec_url" target="s4_search_url" parent="1">
+      <mxGeometry relative="1" as="geometry">
+        <Array as="points"><mxPoint x="515" y="1561"/><mxPoint x="389" y="1561"/></Array>
+      </mxGeometry>
+    </mxCell>
+
+    <!-- s4_dec_url YES → s4_crawl -->
+    <mxCell id="e41" value="예" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="s4_dec_url" target="s4_crawl" parent="1"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+    <!-- s4_search_url → s4_crawl (합류) -->
+    <mxCell id="e42" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="s4_search_url" target="s4_crawl" parent="1">
+      <mxGeometry relative="1" as="geometry">
+        <Array as="points"><mxPoint x="389" y="1632"/><mxPoint x="490" y="1632"/></Array>
+      </mxGeometry>
+    </mxCell>
+
+    <!-- s4_crawl → s4_dec_bizno -->
+    <mxCell id="e43" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="s4_crawl" target="s4_dec_bizno" parent="1"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+    <!-- s4_dec_bizno YES → s4_api -->
+    <mxCell id="e44" value="예" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="s4_dec_bizno" target="s4_api" parent="1"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+    <!-- s4_dec_bizno NO → s4_err_nobiz -->
+    <mxCell id="e45" value="아니오" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="s4_dec_bizno" target="s4_err_nobiz" parent="1"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+    <!-- s4_api → s4_dec_mfg -->
+    <mxCell id="e46" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="s4_api" target="s4_dec_mfg" parent="1"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+    <!-- s4_dec_mfg YES → con_e -->
+    <mxCell id="e47" value="예" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="s4_dec_mfg" target="con_e" parent="1"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+    <!-- s4_dec_mfg NO → s4_err_notmfg -->
+    <mxCell id="e48" value="아니오" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="s4_dec_mfg" target="s4_err_notmfg" parent="1"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+    <!-- con_e → s5_preproc -->
+    <mxCell id="e49" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="con_e" target="s5_preproc" parent="1"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+    <!-- s5_preproc → s5_normalize -->
+    <mxCell id="e50" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="s5_preproc" target="s5_normalize" parent="1"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+    <!-- s5_normalize → s5_search -->
+    <mxCell id="e51" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="s5_normalize" target="s5_search" parent="1"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+    <!-- s5_search → s5_dec_dup -->
+    <mxCell id="e52" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="s5_search" target="s5_dec_dup" parent="1"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+    <!-- s5_dec_dup YES → s5_err_dup -->
+    <mxCell id="e53" value="예(동일품)" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="s5_dec_dup" target="s5_err_dup" parent="1"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+    <!-- s5_dec_dup NO → con_f -->
+    <mxCell id="e54" value="아니오" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="s5_dec_dup" target="con_f" parent="1"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+    <!-- con_f → s6_aggregate -->
+    <mxCell id="e55" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="con_f" target="s6_aggregate" parent="1"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+    <!-- s6_aggregate → s6_dec_flag -->
+    <mxCell id="e56" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="s6_aggregate" target="s6_dec_flag" parent="1"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+    <!-- s6_dec_flag YES → s6_reject -->
+    <mxCell id="e57" value="예(플래그 있음)" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="s6_dec_flag" target="s6_reject" parent="1"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+    <!-- s6_dec_flag NO → s6_dec_ambig -->
+    <mxCell id="e58" value="아니오" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="s6_dec_flag" target="s6_dec_ambig" parent="1"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+    <!-- s6_dec_ambig YES → s6_human -->
+    <mxCell id="e59" value="예(애매함)" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="s6_dec_ambig" target="s6_human" parent="1"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+    <!-- s6_dec_ambig NO → s6_approve -->
+    <mxCell id="e60" value="아니오&#xa;(전 조건 충족)" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="s6_dec_ambig" target="s6_approve" parent="1"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+    <!-- s6_approve → s6_report -->
+    <mxCell id="e61" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="s6_approve" target="s6_report" parent="1"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+    <!-- s6_reject → s6_report (합류) -->
+    <mxCell id="e62" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="s6_reject" target="s6_report" parent="1">
+      <mxGeometry relative="1" as="geometry">
+        <Array as="points"><mxPoint x="890" y="2552"/><mxPoint x="710" y="2552"/></Array>
+      </mxGeometry>
+    </mxCell>
+
+    <!-- s6_human → s6_report (합류) -->
+    <mxCell id="e63" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="s6_human" target="s6_report" parent="1">
+      <mxGeometry relative="1" as="geometry">
+        <Array as="points"><mxPoint x="890" y="2570"/><mxPoint x="710" y="2570"/></Array>
+      </mxGeometry>
+    </mxCell>
+
+    <!-- s6_report → s6_log -->
+    <mxCell id="e64" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="s6_report" target="s6_log" parent="1"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+    <!-- s6_log → s6_dec_more -->
+    <mxCell id="e65" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="s6_log" target="s6_dec_more" parent="1"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+    <!-- s6_dec_more NO → END -->
+    <mxCell id="e66" value="아니오(완료)" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="s6_dec_more" target="end" parent="1"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+    <!-- s6_dec_more YES → s6_loopback_proc -->
+    <mxCell id="e67" value="예" style="edgeStyle=orthogonalEdgeStyle;" edge="1" source="s6_dec_more" target="s6_loopback_proc" parent="1">
+      <mxGeometry relative="1" as="geometry">
+        <Array as="points"><mxPoint x="515" y="2698"/><mxPoint x="380" y="2698"/></Array>
+      </mxGeometry>
+    </mxCell>
+
+    <!-- loopback → s0_io (루프백, 왼쪽 우회) -->
+    <mxCell id="e68" value="다음 행 처리" style="edgeStyle=orthogonalEdgeStyle;exitX=0;exitY=0.5;entryX=0;entryY=0.5;" edge="1" source="s6_loopback_proc" target="s0_io" parent="1">
+      <mxGeometry relative="1" as="geometry">
+        <Array as="points"><mxPoint x="60" y="2698"/><mxPoint x="60" y="172"/><mxPoint x="460" y="172"/></Array>
+      </mxGeometry>
+    </mxCell>
+
+    <!-- 오류 플래그들 → err_merge -->
+    <mxCell id="em1" style="edgeStyle=orthogonalEdgeStyle;dashed=1;strokeColor=#b85450;" edge="1" source="s0_err_field" target="err_merge" parent="1">
+      <mxGeometry relative="1" as="geometry">
+        <Array as="points"><mxPoint x="1110" y="248"/><mxPoint x="1110" y="1224"/></Array>
+      </mxGeometry>
+    </mxCell>
+    <mxCell id="em2" style="edgeStyle=orthogonalEdgeStyle;dashed=1;strokeColor=#b85450;" edge="1" source="s0_err_pdf" target="err_merge" parent="1">
+      <mxGeometry relative="1" as="geometry">
+        <Array as="points"><mxPoint x="1110" y="336"/><mxPoint x="1110" y="1224"/></Array>
+      </mxGeometry>
+    </mxCell>
+    <mxCell id="em3" style="edgeStyle=orthogonalEdgeStyle;dashed=1;strokeColor=#b85450;" edge="1" source="s1_err_model" target="err_merge" parent="1">
+      <mxGeometry relative="1" as="geometry">
+        <Array as="points"><mxPoint x="1110" y="488"/><mxPoint x="1110" y="1224"/></Array>
+      </mxGeometry>
+    </mxCell>
+    <mxCell id="em4" style="edgeStyle=orthogonalEdgeStyle;dashed=1;strokeColor=#b85450;" edge="1" source="s1_err_maker" target="err_merge" parent="1">
+      <mxGeometry relative="1" as="geometry">
+        <Array as="points"><mxPoint x="1110" y="576"/><mxPoint x="1110" y="1224"/></Array>
+      </mxGeometry>
+    </mxCell>
+    <mxCell id="em5" style="edgeStyle=orthogonalEdgeStyle;dashed=1;strokeColor=#b85450;" edge="1" source="s2_err_quote" target="err_merge" parent="1">
+      <mxGeometry relative="1" as="geometry">
+        <Array as="points"><mxPoint x="1110" y="730"/><mxPoint x="1110" y="1224"/></Array>
+      </mxGeometry>
+    </mxCell>
+    <mxCell id="em6" style="edgeStyle=orthogonalEdgeStyle;dashed=1;strokeColor=#b85450;" edge="1" source="s2_err_logo" target="err_merge" parent="1">
+      <mxGeometry relative="1" as="geometry">
+        <Array as="points"><mxPoint x="1110" y="878"/><mxPoint x="1110" y="1224"/></Array>
+      </mxGeometry>
+    </mxCell>
+    <mxCell id="em7" style="edgeStyle=orthogonalEdgeStyle;dashed=1;strokeColor=#b85450;" edge="1" source="s2_err_score" target="err_merge" parent="1">
+      <mxGeometry relative="1" as="geometry">
+        <Array as="points"><mxPoint x="1110" y="1026"/><mxPoint x="1110" y="1224"/></Array>
+      </mxGeometry>
+    </mxCell>
+    <mxCell id="em8" style="edgeStyle=orthogonalEdgeStyle;dashed=1;strokeColor=#b85450;" edge="1" source="s3_err_complete" target="err_merge" parent="1">
+      <mxGeometry relative="1" as="geometry">
+        <Array as="points"><mxPoint x="1110" y="1180"/><mxPoint x="1110" y="1224"/></Array>
+      </mxGeometry>
+    </mxCell>
+
+    <!-- err_merge → s6_aggregate (점선 — 반려 플래그 집결 후 최종 판단으로) -->
+    <mxCell id="em_final" value="플래그 전달" style="edgeStyle=orthogonalEdgeStyle;dashed=1;strokeColor=#b85450;exitX=0;exitY=0.5;" edge="1" source="err_merge" target="s6_aggregate" parent="1">
+      <mxGeometry relative="1" as="geometry">
+        <Array as="points"><mxPoint x="960" y="1224"/><mxPoint x="960" y="2222"/><mxPoint x="710" y="2222"/></Array>
+      </mxGeometry>
+    </mxCell>
+
+  </root>
+</mxGraphModel>

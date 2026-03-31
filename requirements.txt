@@ -1,0 +1,8 @@
+pandas
+openpyxl
+pydantic>=2
+pydantic-settings
+rapidfuzz
+PyMuPDF
+requests
+streamlit
