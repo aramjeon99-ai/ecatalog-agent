@@ -20,6 +20,61 @@ from ecatalog_agent.workflow.graph import run_agent_for_record
 
 APP_CONFIG_PATH = Path("data") / "app_config.json"
 STREAMLIT_DB_PATH = Path("data") / "ecatalog_agent.sqlite3"
+
+# ── 회송 규칙 정의 ─────────────────────────────────────────────────────
+RETURN_RULES: dict[str, dict[str, str]] = {
+    "R1_DUPLICATE": {
+        "category": "사양검토",
+        "message": (
+            "동일한 모델, 사양이 등록되어 있습니다. "
+            "중복 등록여부 검토하시어 기존 코드 사용이 가능하시면 기존코드를 사용하시기 바랍니다. "
+            "추가의 절차상 신규 등록이 필요한 경우 등에는 신청서 메모란에 별도 사유를 기재하고, "
+            "검증자료를 첨부하여 재신청 하시면 됩니다."
+        ),
+    },
+    "R2_SPEC_NOT_VERIFIED": {
+        "category": "사양검토",
+        "message": (
+            "시스템 사양 입력값에 기재하신 사양값을 첨부하신 사양검증자료 및 URL에서 확인하고자 하였으나 "
+            "확인이 되지 않습니다. 자료에 없는 사양값은 삭제하시거나 등록된 자료에 표기하시거나, "
+            "추가로 사양을 확인 가능한 자료를 첨부하여 파일로 등록하여 재신청 부탁드립니다."
+        ),
+    },
+    "R3_INVALID_EVIDENCE": {
+        "category": "검증자료",
+        "message": (
+            "사양검증자료는 메이커의 상호/로고가 있어야 해당 메이커의 자료로 검토가 가능합니다. "
+            "상호/로고가 보이는 전체 자료를 등록하시거나, 원 제조사의 자료를 등록하여 다시 신청 부탁드립니다."
+        ),
+    },
+    "R4_MODEL_MISMATCH": {
+        "category": "모델검증",
+        "message": (
+            "신청하신 모델명과 시스템 입력 모델명이 서로 상이합니다. "
+            "상이한 내용은 수정하여 동일 모델/메이커로 기재하여 재신청 바랍니다."
+        ),
+    },
+    "R5_NON_MANUFACTURER": {
+        "category": "메이커검증",
+        "message": (
+            "등록하신 자료를 바탕으로 원 Maker의 업태를 검색하니 제조업이 아닌 것으로 확인됩니다. "
+            "'제조업'만 등록이 가능하므로, '제조업'을 확인 가능한 사업자등록증을 첨부하시거나, "
+            "사업자 등록번호를 신청자메모에 기재하여 재신청 부탁드립니다."
+        ),
+    },
+    "R6_QUOTE_ONLY": {
+        "category": "검증자료",
+        "message": (
+            "견적서는 사양검증자료로 사용 불가합니다. "
+            "견적서가 아닌 모델을 확인할 수 있는 다른 자료나 제조사에서 해당 모델을 제조하는 것이 맞다는 "
+            "최신 메일을 첨부해 주시면 승인 가능하오니 사양검증자료 재확인 부탁드립니다."
+        ),
+    },
+    "R7_MANUFACTURER_UNKNOWN": {
+        "category": "메이커검증",
+        "message": "제조사 확인이 불가하여 추가 검토 필요",
+    },
+}
 STREAMLIT_OUTPUT_DIR = Path("output") / "streamlit_reports"
 
 _DATA_FILENAMES = {
@@ -689,11 +744,56 @@ def run_qcode_validation(
     ):
         outcome = "PENDING"
 
+    # ── 회송 규칙 매핑 ────────────────────────────────────────────────
+    # error_flag 코드 → 회송 규칙 ID 변환
+    _FLAG_TO_RULE: dict[str, str] = {
+        "ERR_DUPLICATE":          "R1_DUPLICATE",
+        "ERR_SPEC_NOT_FOUND":     "R2_SPEC_NOT_VERIFIED",
+        "ERR_NO_MAKER_LOGO":      "R3_INVALID_EVIDENCE",
+        "ERR_MODEL_MISMATCH":     "R4_MODEL_MISMATCH",
+        "ERR_MAKER_MISMATCH":     "R4_MODEL_MISMATCH",
+        "ERR_KNOWN_ERROR_CODE":   "R4_MODEL_MISMATCH",
+        "ERR_NON_MANUFACTURER":   "R5_NON_MANUFACTURER",
+        "ERR_QUOTE_ONLY":         "R6_QUOTE_ONLY",
+        "ERR_MANUFACTURER_UNKNOWN": "R7_MANUFACTURER_UNKNOWN",
+    }
+
+    # 제조업 검증 결과에 따라 규칙 추가
+    if mfr_verification:
+        maker_type = mfr_verification.get("maker_type", "")
+        if maker_type == "신규공급사":
+            _FLAG_TO_RULE_EXTRA = "R7_MANUFACTURER_UNKNOWN"
+        elif mfr_verification.get("is_manufacturer") is False:
+            _FLAG_TO_RULE_EXTRA = "R5_NON_MANUFACTURER"
+        else:
+            _FLAG_TO_RULE_EXTRA = None
+    else:
+        _FLAG_TO_RULE_EXTRA = None
+
+    # 활성화된 회송 규칙 수집
+    active_rule_ids: list[str] = []
+    for flag in state.error_flags:
+        rule_id = _FLAG_TO_RULE.get(flag.code)
+        if rule_id and rule_id not in active_rule_ids:
+            active_rule_ids.append(rule_id)
+    if _FLAG_TO_RULE_EXTRA and _FLAG_TO_RULE_EXTRA not in active_rule_ids:
+        active_rule_ids.append(_FLAG_TO_RULE_EXTRA)
+
+    active_rules = [
+        {"id": rid, **RETURN_RULES[rid]}
+        for rid in active_rule_ids
+        if rid in RETURN_RULES
+    ]
+
     if outcome == "APPROVED":
         summary = "모든 단계 기준을 만족합니다."
     elif outcome == "REJECTED":
-        all_codes = sorted({f.code for f in state.error_flags})
-        summary = "자동 회송 — 반려 사유: " + ", ".join(all_codes)
+        if active_rules:
+            # 첫 번째 회송 규칙 메시지를 주 사유로 사용
+            summary = active_rules[0]["message"]
+        else:
+            all_codes = sorted({f.code for f in state.error_flags})
+            summary = "자동 회송 — 반려 사유: " + ", ".join(all_codes)
     else:
         summary = (
             "담당자 확인 필요: " + "; ".join(fd.low_confidence_items)
@@ -747,6 +847,7 @@ def run_qcode_validation(
         "maker_matched": maker_matched,
         "mfr_verification": mfr_verification,
         "maker_homepage_url": ctx.maker_homepage_url,
+        "active_rules": active_rules,
         "web_search_result": web_result,
         "review_report_path": state.review_report.excel_path if state.review_report else None,
     }

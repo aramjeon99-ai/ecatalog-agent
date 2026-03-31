@@ -344,6 +344,7 @@ def show_validation_dialog(q_code: str) -> None:
     # ── 4) 종합 판단 ───────────────────────────────────────────────
     st.markdown("#### 4) 종합 판단")
     missing_specs = [r["항목"] for r in exist_rows[2:] if r["판정"] in ("없음", "불일치")]
+    active_rules  = judgment.get("active_rules") or []
 
     with st.container(border=True):
         st.markdown(f"**결과: :{color}[{outcome}]**")
@@ -356,7 +357,14 @@ def show_validation_dialog(q_code: str) -> None:
             st.markdown(f"- 미확인/불일치 사양: {', '.join(missing_specs)}")
         else:
             st.markdown("- 사양 존재 여부: 모든 항목 확인됨")
-        st.markdown(f"- 사유: {result.get('summary', '')}")
+
+        if active_rules:
+            st.divider()
+            st.markdown("**📋 회송 사유 및 재신청 안내:**")
+            for rule in active_rules:
+                st.warning(f"**[{rule['id']}] {rule['category']}**\n\n{rule['message']}")
+        else:
+            st.markdown(f"- 사유: {result.get('summary', '')}")
 
     st.divider()
 
