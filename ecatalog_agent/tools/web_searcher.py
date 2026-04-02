@@ -87,6 +87,101 @@ def _download_and_parse_pdf(url: str) -> str:
         return ""
 
 
+def _fetch_html_text(url: str) -> str:
+    """웹 페이지 HTML에서 순수 텍스트를 추출한다."""
+    try:
+        resp = requests.get(
+            url,
+            headers={"User-Agent": _USER_AGENT},
+            timeout=_TIMEOUT_S,
+        )
+        if resp.status_code != 200:
+            return ""
+        # HTML 태그 제거
+        text = re.sub(r"<[^>]+>", " ", resp.text)
+        text = re.sub(r"\s+", " ", text)
+        return text[:100000]
+    except Exception:
+        return ""
+
+
+def verify_model_from_url(
+    url: str,
+    model_name: str,
+    *,
+    norm_model_fn=None,
+    check_model_fn=None,
+) -> dict[str, Any]:
+    """
+    시스템 데이터의 Model-1 첨부URL1을 직접 방문해 모델명을 확인한다.
+
+    - PDF URL → 다운로드 후 텍스트 파싱
+    - 웹 페이지 → HTML 텍스트 추출
+
+    Returns:
+        {
+            "checked": bool,
+            "model_found": bool,
+            "evidence": str,       # 확인 근거 요약
+            "page_text": str,      # 추출 텍스트 (최대 50000자)
+        }
+    """
+    norm_fn = norm_model_fn or _norm
+    result: dict[str, Any] = {
+        "checked": False,
+        "model_found": False,
+        "evidence": "",
+        "page_text": "",
+    }
+
+    if not url or not model_name:
+        return result
+
+    url = url.strip()
+    is_pdf = url.lower().endswith(".pdf") or "pdf" in url.lower().split("?")[0][-10:]
+
+    # 텍스트 추출
+    if is_pdf:
+        page_text = _download_and_parse_pdf(url)
+    else:
+        page_text = _fetch_html_text(url)
+
+    if not page_text:
+        result["evidence"] = f"URL 접근 실패 또는 내용 없음: {url}"
+        return result
+
+    result["checked"] = True
+    result["page_text"] = page_text[:50000]
+
+    # 모델명 확인
+    norm_model = norm_fn(model_name)
+    text_lower = page_text.lower()
+    text_norm = norm_fn(page_text)
+
+    # 1) 정규화 substring 매칭
+    if norm_model and norm_model in text_norm:
+        result["model_found"] = True
+        result["evidence"] = f"URL 텍스트에서 모델 확인: {url}"
+        return result
+
+    # 2) check_model_fn 활용 (형번 분해 일치)
+    if check_model_fn:
+        matched, val = check_model_fn(model_name, page_text[:80000])
+        if matched:
+            result["model_found"] = True
+            result["evidence"] = f"URL 형번체계 일치({val}): {url}"
+            return result
+
+    # 3) 원본 모델명 직접 포함 (대소문자 무시)
+    if model_name.lower() in text_lower:
+        result["model_found"] = True
+        result["evidence"] = f"URL에서 모델명 직접 확인: {url}"
+        return result
+
+    result["evidence"] = f"URL 확인했으나 모델 미발견: {url}"
+    return result
+
+
 # ── 메인 함수 ─────────────────────────────────────────────────────────
 def web_search_verify(
     maker: str,

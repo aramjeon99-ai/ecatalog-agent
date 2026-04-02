@@ -842,8 +842,41 @@ def run_qcode_validation(
     except Exception:
         mfr_verification = None
 
-    # ── 웹 검색 2차 검증 (모델 불일치, 옵션 미확인, 또는 메이커 불일치 시) ──
+    # ── URL 직접 확인 (시스템 데이터의 첨부URL1이 있을 때 우선 실행) ─────
     _option_uncertain = "앞부분일치" in model_pdf_val and "옵션미확인" in model_pdf_val
+    url_verify_result: dict[str, Any] | None = None
+    if ctx.url_value and (not model_matched or _option_uncertain):
+        try:
+            from ecatalog_agent.tools.web_searcher import verify_model_from_url
+            url_verify_result = verify_model_from_url(
+                ctx.url_value,
+                ctx.model_name,
+                norm_model_fn=_norm_model,
+                check_model_fn=check_model_match,
+            )
+            if url_verify_result.get("model_found"):
+                model_matched = True
+                model_pdf_val = url_verify_result["evidence"]
+                state.error_flags = [f for f in state.error_flags if f.code != "ERR_MODEL_MISMATCH"]
+                # URL에서 추출한 텍스트로 PDF 메이커 출처도 재확인
+                if not pdf_maker_verified and url_verify_result.get("page_text"):
+                    from ecatalog_agent.tools.vision_order_code import maker_evidence_in_pdf_text
+                    _extra = {
+                        str(x).strip().lower()
+                        for x in (maker_profile.get("extra_text_tokens_for_maker_evidence") or [])
+                        if str(x).strip()
+                    } if maker_profile else set()
+                    if maker_evidence_in_pdf_text(
+                        ctx.maker_name,
+                        url_verify_result["page_text"],
+                        extra_aliases=_extra,
+                    ):
+                        pdf_maker_verified = True
+                        state.error_flags = [f for f in state.error_flags if f.code != "ERR_PDF_MAKER_SOURCE"]
+        except Exception:
+            url_verify_result = None
+
+    # ── 웹 검색 2차 검증 (URL 직접 확인 후에도 불일치이거나 URL 없는 경우) ──
     web_result: dict[str, Any] | None = None
     if not model_matched or not maker_matched or _option_uncertain:
         try:
@@ -1030,6 +1063,7 @@ def run_qcode_validation(
         "maker_homepage_url": ctx.maker_homepage_url,
         "active_rules": active_rules,
         "web_search_result": web_result,
+        "url_verify_result": url_verify_result,
         "vision_order_code_result": vision_result,
         "pdf_maker_verified": pdf_maker_verified,
         "maker_in_pdf_text": maker_in_pdf,
