@@ -4,6 +4,14 @@ import os
 import re
 from pathlib import Path
 
+# Streamlit 진입점: ecatalog_agent import 전에 .env 반영
+try:
+    from dotenv import load_dotenv
+
+    load_dotenv(Path(__file__).resolve().parent / ".env")
+except ImportError:
+    pass
+
 import pandas as pd
 import streamlit as st
 

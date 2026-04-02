@@ -691,12 +691,9 @@ def run_qcode_validation(
 
     fd = state.final_decision
     assert fd is not None
-    outcome = fd.outcome
 
     # ── Q3 오류 코드 → 즉시 자동 회송 플래그 ────────────────────
-    forced_flags: list[str] = []
     if is_known_error_code(ctx.q_code):
-        forced_flags.append("ERR_KNOWN_ERROR_CODE")
         already = {f.code for f in state.error_flags}
         if "ERR_KNOWN_ERROR_CODE" not in already:
             state.error_flags.append(ErrorFlag(
@@ -796,11 +793,15 @@ def run_qcode_validation(
             pdf_filename=ctx.pdf_filename,
         )
 
+    # 기준 목록·PDF 재검증으로 통과한 항목은 STEP1 등이 남긴 동일 코드 플래그 제거
     if model_matched:
         state.error_flags = [f for f in state.error_flags if f.code != "ERR_MODEL_MISMATCH"]
+    if maker_matched:
+        state.error_flags = [f for f in state.error_flags if f.code != "ERR_MAKER_MISMATCH"]
+    if pdf_maker_verified:
+        state.error_flags = [f for f in state.error_flags if f.code != "ERR_PDF_MAKER_SOURCE"]
 
     if not model_matched:
-        forced_flags.append("ERR_MODEL_MISMATCH")
         already = {f.code for f in state.error_flags}
         if "ERR_MODEL_MISMATCH" not in already:
             state.error_flags.append(ErrorFlag(
@@ -810,7 +811,6 @@ def run_qcode_validation(
                 evidence=f"system={ctx.model_name}, pdf_best={model_pdf_val}",
             ))
     if not maker_matched:
-        forced_flags.append("ERR_MAKER_MISMATCH")
         already = {f.code for f in state.error_flags}
         if "ERR_MAKER_MISMATCH" not in already:
             state.error_flags.append(ErrorFlag(
@@ -822,7 +822,6 @@ def run_qcode_validation(
 
     # ── 등록 메이커인 경우: 첨부 PDF가 동일 제조사 발행 자료인지 필수 ─────────
     if maker_matched and not pdf_maker_verified:
-        forced_flags.append("ERR_PDF_MAKER_SOURCE")
         already = {f.code for f in state.error_flags}
         if "ERR_PDF_MAKER_SOURCE" not in already:
             state.error_flags.append(ErrorFlag(
@@ -863,15 +862,38 @@ def run_qcode_validation(
                     if web_result.get("matched_pdf_url")
                     else "웹 검색 결과에서 확인됨"
                 )
-                # ERR_MODEL_MISMATCH 플래그 취소
                 state.error_flags = [f for f in state.error_flags if f.code != "ERR_MODEL_MISMATCH"]
-                if "ERR_MODEL_MISMATCH" in forced_flags:
-                    forced_flags.remove("ERR_MODEL_MISMATCH")
         except Exception:
             web_result = None
 
-    if forced_flags:
+    # ── 최종 강제 회송 vs STEP6 재평가 (UI 모델·메이커 일치와 outcome 일치화) ──
+    from ecatalog_agent.steps.step6_decision import step6_final_decision
+
+    final_forced: list[str] = []
+    if is_known_error_code(ctx.q_code):
+        final_forced.append("ERR_KNOWN_ERROR_CODE")
+    if not model_matched:
+        final_forced.append("ERR_MODEL_MISMATCH")
+    if not maker_matched:
+        final_forced.append("ERR_MAKER_MISMATCH")
+    if maker_matched and not pdf_maker_verified:
+        final_forced.append("ERR_PDF_MAKER_SOURCE")
+
+    if final_forced:
         outcome = "REJECTED"
+    else:
+        fd = step6_final_decision(
+            step_results=[
+                state.step0_result,
+                state.step1_result,
+                state.step2_result,
+                state.step3_result,
+                state.step4_result,
+                state.step5_result,
+            ],
+            error_flags=state.error_flags,
+        )
+        outcome = fd.outcome
 
     # 신규공급사 → 사람검토(PENDING) 강제 (REJECTED가 아닌 경우에만)
     if (
@@ -885,14 +907,23 @@ def run_qcode_validation(
     # ── 회송 규칙 매핑 ────────────────────────────────────────────────
     # error_flag 코드 → 회송 규칙 ID 변환
     _FLAG_TO_RULE: dict[str, str] = {
-        "ERR_DUPLICATE":          "R1_DUPLICATE",
-        "ERR_SPEC_NOT_FOUND":     "R2_SPEC_NOT_VERIFIED",
-        "ERR_NO_MAKER_LOGO":      "R3_INVALID_EVIDENCE",
-        "ERR_MODEL_MISMATCH":     "R4_MODEL_MISMATCH",
-        "ERR_MAKER_MISMATCH":     "R4_MODEL_MISMATCH",
-        "ERR_KNOWN_ERROR_CODE":   "R4_MODEL_MISMATCH",
-        "ERR_NON_MANUFACTURER":   "R5_NON_MANUFACTURER",
-        "ERR_QUOTE_ONLY":         "R6_QUOTE_ONLY",
+        "ERR_DUPLICATE":            "R1_DUPLICATE",
+        "ERR_DUPLICATE_ITEM":       "R1_DUPLICATE",
+        "ERR_SPEC_NOT_FOUND":       "R2_SPEC_NOT_VERIFIED",
+        "ERR_SPEC_MISMATCH":        "R2_SPEC_NOT_VERIFIED",
+        "ERR_INCOMPLETE_SPEC":      "R2_SPEC_NOT_VERIFIED",
+        "ERR_MISSING_FIELD":        "R2_SPEC_NOT_VERIFIED",
+        "ERR_NO_MAKER_LOGO":        "R3_INVALID_EVIDENCE",
+        "ERR_NO_LOGO":              "R3_INVALID_EVIDENCE",
+        "ERR_LOW_RELIABILITY":      "R3_INVALID_EVIDENCE",
+        "ERR_NO_PDF":               "R3_INVALID_EVIDENCE",
+        "ERR_MODEL_MISMATCH":       "R4_MODEL_MISMATCH",
+        "ERR_MAKER_MISMATCH":       "R4_MODEL_MISMATCH",
+        "ERR_KNOWN_ERROR_CODE":     "R4_MODEL_MISMATCH",
+        "ERR_NON_MANUFACTURER":     "R5_NON_MANUFACTURER",
+        "ERR_NOT_MANUFACTURER":     "R5_NON_MANUFACTURER",
+        "ERR_QUOTE_ONLY":           "R6_QUOTE_ONLY",
+        "ERR_QUOTE_DOCUMENT":       "R6_QUOTE_ONLY",
         "ERR_MANUFACTURER_UNKNOWN": "R7_MANUFACTURER_UNKNOWN",
         "ERR_PDF_MAKER_SOURCE":     "R8_PDF_NOT_SAME_MAKER",
     }

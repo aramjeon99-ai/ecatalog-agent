@@ -7,3 +7,4 @@ PyMuPDF
 openai>=1.0.0
 requests
 streamlit
+python-dotenv>=1.0.0
