@@ -965,11 +965,18 @@ def run_qcode_validation(
             all_codes = sorted({f.code for f in state.error_flags})
             summary = "자동 회송 — 반려 사유: " + ", ".join(all_codes)
     else:
-        summary = (
-            "담당자 확인 필요: " + "; ".join(fd.low_confidence_items)
-            if fd.low_confidence_items
-            else "담당자 확인이 필요합니다."
-        )
+        # PENDING 사유: 모델·메이커 일치 여부 + 저신뢰 스텝 목록
+        _match_parts: list[str] = []
+        _model_label = "일치" if model_matched else "불일치"
+        _maker_label = "일치" if maker_matched else "불일치"
+        _match_parts.append(f"모델={_model_label}({ctx.model_name})")
+        _match_parts.append(f"메이커={_maker_label}({ctx.maker_name})")
+        _match_info = ", ".join(_match_parts)
+
+        if fd.low_confidence_items:
+            summary = f"담당자 확인 필요 [{_match_info}]: " + "; ".join(fd.low_confidence_items)
+        else:
+            summary = f"담당자 확인 필요 [{_match_info}]"
 
     step_results: list[dict[str, Any]] = []
     for sr in (
