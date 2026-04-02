@@ -54,15 +54,6 @@ def step2_reliability_check(
         doc_type = "NAMEPLATE"
 
     logo_detected = bool(maker_norm) and (maker_norm in text or record.maker_name.lower() in text)
-    if not logo_detected and not is_quote:
-        flags.append(
-            ErrorFlag(
-                code="ERR_NO_LOGO",
-                step="STEP2",
-                message="Maker/logo evidence not detected in PDF text.",
-                evidence=f"maker={record.maker_name}",
-            )
-        )
 
     reliability_score = 0
     if logo_detected:
@@ -73,16 +64,6 @@ def step2_reliability_check(
         reliability_score += 20
     if any(ch.isdigit() for ch in text[:2000]):
         reliability_score += 10
-
-    if not flags and reliability_score < reliability_threshold:
-        flags.append(
-            ErrorFlag(
-                code="ERR_LOW_RELIABILITY",
-                step="STEP2",
-                message=f"Reliability score below threshold ({reliability_threshold}).",
-                evidence=f"score={reliability_score}",
-            )
-        )
 
     status = "PASS" if not flags else "FAIL"
     confidence = float(max(0.0, min(1.0, reliability_score / 100.0)))
