@@ -15,8 +15,15 @@ except ImportError:
 import pandas as pd
 import streamlit as st
 
+from ecatalog_agent.db.logger import (
+    get_duplicate_baseline_count,
+    init_db,
+    load_duplicate_baseline,
+)
 from ecatalog_agent.streamlit_poc import (
     APP_CONFIG_PATH,
+    STREAMLIT_DB_PATH,
+    _DATA_FILENAMES,
     get_qcode_list,
     is_known_error_code,
     load_app_config,
@@ -25,7 +32,6 @@ from ecatalog_agent.streamlit_poc import (
     resolve_pdf_base_dir,
     run_qcode_validation,
     save_app_config,
-    _DATA_FILENAMES,
 )
 
 st.set_page_config(page_title="e-Catalog POC Validation", layout="wide")
@@ -95,6 +101,66 @@ with st.sidebar:
         st.session_state.pop("validation_results", None)
         st.rerun()
     if st.button("새로고침"):
+        st.rerun()
+
+    # ── 중복 검사 기준 데이터 ───────────────────────────────────────────
+    st.divider()
+    st.markdown("**④ 중복 검사 기준 데이터** (선택)")
+
+    init_db(STREAMLIT_DB_PATH)
+    dup_count = get_duplicate_baseline_count(STREAMLIT_DB_PATH)
+    if dup_count > 0:
+        st.caption(f"현재 적재: {dup_count:,}건")
+    else:
+        st.caption("기준 데이터 없음 — 중복 검사 건너뜀")
+
+    dup_baseline_file = st.file_uploader(
+        "기존 등록 데이터 (Q코드·모델명·메이커)",
+        type=["xlsx", "xls"],
+        key="dup_baseline",
+        help="Q-Code, Model-1, Maker Name-1 컬럼이 있는 엑셀 파일을 올리세요. 여러 시트 모두 읽습니다.",
+    )
+    if st.button("기준 데이터 적재", type="secondary") and dup_baseline_file:
+        try:
+            xls = pd.ExcelFile(dup_baseline_file)
+            rows: list[dict] = []
+            for sheet in xls.sheet_names:
+                df_sheet = xls.parse(sheet)
+                # 컬럼명 유연하게 인식
+                col_map: dict[str, str] = {}
+                for c in df_sheet.columns:
+                    cl = str(c).strip().lower()
+                    if cl in ("q-code", "q_code", "qcode"):
+                        col_map["request_id"] = c
+                    elif cl in ("model-1", "model_1", "model name", "model"):
+                        col_map["model_name"] = c
+                    elif cl in ("maker name-1", "maker name_1", "maker name", "maker"):
+                        col_map["maker_name"] = c
+                if "model_name" not in col_map or "maker_name" not in col_map:
+                    continue
+                for _, r in df_sheet.iterrows():
+                    rows.append({
+                        "request_id": str(r.get(col_map.get("request_id", ""), "") or ""),
+                        "model_name":  str(r.get(col_map["model_name"], "") or ""),
+                        "maker_name":  str(r.get(col_map["maker_name"], "") or ""),
+                    })
+            inserted, skipped = load_duplicate_baseline(STREAMLIT_DB_PATH, rows)
+            st.success(f"적재 완료: {inserted:,}건 (빈 항목 {skipped:,}건 제외)")
+            st.rerun()
+        except Exception as e:
+            st.error(f"적재 실패: {e}")
+
+    st.divider()
+    st.caption("데이터 초기화")
+    if st.button("🗑️ 저장 데이터 초기화", type="secondary"):
+        data_dir = Path("data")
+        for fname in _DATA_FILENAMES.values():
+            fp = data_dir / fname
+            if fp.exists():
+                fp.unlink()
+        if APP_CONFIG_PATH.exists():
+            APP_CONFIG_PATH.unlink()
+        st.session_state.clear()
         st.rerun()
 
 # ── 데이터 로드 ────────────────────────────────────────────────────────
