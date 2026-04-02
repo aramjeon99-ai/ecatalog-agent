@@ -881,6 +881,10 @@ def run_qcode_validation(
 
     if final_forced:
         outcome = "REJECTED"
+    elif model_matched and maker_matched and pdf_maker_verified and not state.error_flags:
+        # 모델·메이커·PDF 출처가 모두 확인되고 오류 플래그가 없으면
+        # 중간 스텝 confidence 점수에 관계없이 자동승인
+        outcome = "APPROVED"
     else:
         fd = step6_final_decision(
             step_results=[
