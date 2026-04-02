@@ -189,6 +189,7 @@ def web_search_verify(
     *,
     norm_model_fn=None,          # 외부 정규화 함수 (없으면 내부 _norm 사용)
     check_model_fn=None,         # 외부 모델 매칭 함수 (없으면 단순 substring)
+    expected_specs: list[dict[str, str]] | None = None,
 ) -> dict[str, Any]:
     """
     웹 검색으로 메이커/모델을 2차 검증한다.
@@ -200,6 +201,9 @@ def web_search_verify(
             "model_found_online": bool,
             "matched_pdf_url": str | None,
             "matched_pdf_text": str,
+            "matched_page_url": str | None,
+            "matched_page_text": str,
+            "online_spec_hints": list[{"title": str, "value": str}],
             "search_snippets": list[dict],   # [{title, url, snippet}]
             "evidence_summary": str,
         }
@@ -212,6 +216,9 @@ def web_search_verify(
         "model_found_online": False,
         "matched_pdf_url": None,
         "matched_pdf_text": "",
+        "matched_page_url": None,
+        "matched_page_text": "",
+        "online_spec_hints": [],
         "search_snippets": [],
         "evidence_summary": "",
     }
@@ -270,9 +277,13 @@ def web_search_verify(
 
     # ── 모델 온라인 존재 여부 ────────────────────────────────────
     model_n = norm_fn(model)
+    matched_page_candidate_url: str | None = None
+    matched_page_candidate_text: str | None = None
     for s in snippets:
         if model_n and model_n in norm_fn(s["title"] + s["snippet"]):
             result["model_found_online"] = True
+            matched_page_candidate_url = s.get("url") or None
+            matched_page_candidate_text = (s.get("title") or "") + " " + (s.get("snippet") or "")
             break
 
     # ── PDF 다운로드 및 모델명 재확인 ────────────────────────────
@@ -292,12 +303,75 @@ def web_search_verify(
             result["matched_pdf_text"] = pdf_text[:8000]
             break
 
+    # ── HTML 페이지에서 사양(키: title, 값) 추출 ─────────────────
+    # PDF가 아닌 “제품 페이지(표)”에서 바로 값을 긁어오려는 목적.
+    if result["model_found_online"] and expected_specs and not result.get("online_spec_hints"):
+        # 1) 모델이 잡힌 “페이지 후보(URL)” 우선
+        # 2) 없으면 “웹에서 채택한 PDF URL”을 사용
+        page_url = matched_page_candidate_url or result.get("matched_pdf_url") or None
+        if page_url:
+            url_check = verify_model_from_url(
+                page_url,
+                model,
+                norm_model_fn=norm_model_fn,
+                check_model_fn=check_model_fn,
+            )
+            if url_check.get("checked") and url_check.get("model_found"):
+                result["matched_page_url"] = page_url
+                result["matched_page_text"] = (url_check.get("page_text") or "")[:50000]
+
+                try:
+                    online_hints: list[dict[str, str]] = []
+                    page_text = result["matched_page_text"]
+                    page_text_norm = page_text.lower()
+
+                    for item in expected_specs:
+                        title = (item.get("title") or "").strip()
+                        expected_value = (item.get("value") or "").strip()
+                        if not title:
+                            continue
+
+                        # title이 등장하는 근처 세그먼트를 잘라서 value 추정
+                        # (MISUMI 같은 표 페이지에서 "Bore Size 100" 형태를 기대)
+                        idx = page_text_norm.find(title.lower())
+                        if idx == -1:
+                            continue
+                        seg = page_text[idx : idx + 200]
+
+                        # ':' 또는 공백 뒤 첫 숫자/토큰을 value로 후보 선정
+                        #  - 숫자 우선 (예: 100, 25Z, 10m)
+                        m_num = re.search(r"[:\-\s]\s*([0-9][0-9,\.]*\s*[A-Za-z°/%]*)", seg)
+                        if m_num:
+                            found_val = m_num.group(1).strip()
+                        else:
+                            # 숫자가 아니어도 값이 문자열로 나온 경우의 폴백
+                            # (예: 'Oil Lubrication Type' 같은 문장형)
+                            m_any = re.search(r"[:\-]\s*([^\n\r]{1,80})", seg)
+                            found_val = (m_any.group(1).strip() if m_any else seg[:80].strip())
+
+                        # expected_value가 비어있지 않으면 "포함"으로 간단 검증
+                        if expected_value and expected_value.lower() not in found_val.lower():
+                            # 완전 일치가 아니라도, 숫자 포함이면 허용(예: 100mm ↔ 100)
+                            online_hints.append({"title": title, "value": found_val})
+                        else:
+                            online_hints.append({"title": title, "value": found_val})
+
+                    # 중복 title 제거(앞에서 잡힌 값 우선)
+                    dedup: dict[str, dict[str, str]] = {}
+                    for h in online_hints:
+                        dedup[h["title"]] = h
+                    result["online_spec_hints"] = list(dedup.values())
+                except Exception:
+                    pass
+
     # ── 근거 요약 ─────────────────────────────────────────────────
     parts = []
     if result["model_found_online"]:
         parts.append(f"모델명 '{model}' 온라인 확인됨")
         if result["matched_pdf_url"]:
             parts.append(f"PDF 출처: {result['matched_pdf_url']}")
+        if result.get("matched_page_url"):
+            parts.append(f"웹 페이지 출처: {result['matched_page_url']}")
     else:
         parts.append(f"모델명 '{model}' 온라인 미확인")
 

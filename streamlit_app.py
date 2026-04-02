@@ -15,15 +15,8 @@ except ImportError:
 import pandas as pd
 import streamlit as st
 
-from ecatalog_agent.db.logger import (
-    get_duplicate_baseline_count,
-    init_db,
-    load_duplicate_baseline,
-)
 from ecatalog_agent.streamlit_poc import (
     APP_CONFIG_PATH,
-    STREAMLIT_DB_PATH,
-    _DATA_FILENAMES,
     get_qcode_list,
     is_known_error_code,
     load_app_config,
@@ -32,10 +25,36 @@ from ecatalog_agent.streamlit_poc import (
     resolve_pdf_base_dir,
     run_qcode_validation,
     save_app_config,
+    _DATA_FILENAMES,
 )
 
 st.set_page_config(page_title="e-Catalog POC Validation", layout="wide")
 st.title("e-Catalog POC 검증 화면")
+
+# ── 등록할 PDF 가이드 (초보용) ─────────────────────────────────────
+st.markdown("## 등록할 PDF 가이드")
+st.markdown(
+    "이 화면은 `사양검증자료(PDF)`에서 **모델(주문 코드/형번)**, **제조사**, **사양(수치/표)** 을 확인할 수 있어야 등록이 가능합니다."
+)
+st.markdown("다음 기준을 만족하는 문서를 첨부해 주세요.")
+st.markdown(
+    "- `권장(통과 가능성이 높음)`: 제조사 발행 **카탈로그/데이터시트(스펙표 포함)/도면/명판 관련 문서**"
+)
+st.markdown(
+    "- `필수로 확인돼야 함`: PDF 안에서 제조사 근거(로고/상호/웹주소 등)와, 제품 표/도해에서 **모델(형번) 표현** 및 필요한 **사양 값**이 확인돼야 합니다."
+)
+st.markdown(
+    "- `제외(반려 가능)`: **견적서/발주서/프로포마** 문서. (특히 `견적`/`발주` 같은 제목이 있어도 **수량 + 금액**이 같이 기재된 경우 견적서로 판단해 제외합니다.)"
+)
+st.markdown(
+    "- `주의`: 대리점/유통사 자료처럼 제조사 발행이 불명확하면 `제조사 자료 아님`으로 반려될 수 있습니다."
+)
+st.markdown(
+    "- `이미지로만 있는 경우(OCR/비전)`: PDF에서 모델/제조사가 텍스트가 아니라 이미지로만 보이면, GPT 비전(OCR)으로 확인을 시도합니다. 비전 사용은 `OPENAI_API_KEY`가 설정되어 있을 때만 동작합니다."
+)
+st.markdown(
+    "- `중복`: 같은 `모델 + 메이커` 조합이 이미 처리 이력이 있으면 `중복`으로 자동 회송될 수 있습니다. 테스트 중이면 `전체 재검증`을 사용하거나 로컬 처리 이력을 초기화해야 합니다."
+)
 
 # ── 사이드바: 기준 데이터 등록 ─────────────────────────────────────────
 config = load_app_config()
@@ -101,66 +120,6 @@ with st.sidebar:
         st.session_state.pop("validation_results", None)
         st.rerun()
     if st.button("새로고침"):
-        st.rerun()
-
-    # ── 중복 검사 기준 데이터 ───────────────────────────────────────────
-    st.divider()
-    st.markdown("**④ 중복 검사 기준 데이터** (선택)")
-
-    init_db(STREAMLIT_DB_PATH)
-    dup_count = get_duplicate_baseline_count(STREAMLIT_DB_PATH)
-    if dup_count > 0:
-        st.caption(f"현재 적재: {dup_count:,}건")
-    else:
-        st.caption("기준 데이터 없음 — 중복 검사 건너뜀")
-
-    dup_baseline_file = st.file_uploader(
-        "기존 등록 데이터 (Q코드·모델명·메이커)",
-        type=["xlsx", "xls"],
-        key="dup_baseline",
-        help="Q-Code, Model-1, Maker Name-1 컬럼이 있는 엑셀 파일을 올리세요. 여러 시트 모두 읽습니다.",
-    )
-    if st.button("기준 데이터 적재", type="secondary") and dup_baseline_file:
-        try:
-            xls = pd.ExcelFile(dup_baseline_file)
-            rows: list[dict] = []
-            for sheet in xls.sheet_names:
-                df_sheet = xls.parse(sheet)
-                # 컬럼명 유연하게 인식
-                col_map: dict[str, str] = {}
-                for c in df_sheet.columns:
-                    cl = str(c).strip().lower()
-                    if cl in ("q-code", "q_code", "qcode"):
-                        col_map["request_id"] = c
-                    elif cl in ("model-1", "model_1", "model name", "model"):
-                        col_map["model_name"] = c
-                    elif cl in ("maker name-1", "maker name_1", "maker name", "maker"):
-                        col_map["maker_name"] = c
-                if "model_name" not in col_map or "maker_name" not in col_map:
-                    continue
-                for _, r in df_sheet.iterrows():
-                    rows.append({
-                        "request_id": str(r.get(col_map.get("request_id", ""), "") or ""),
-                        "model_name":  str(r.get(col_map["model_name"], "") or ""),
-                        "maker_name":  str(r.get(col_map["maker_name"], "") or ""),
-                    })
-            inserted, skipped = load_duplicate_baseline(STREAMLIT_DB_PATH, rows)
-            st.success(f"적재 완료: {inserted:,}건 (빈 항목 {skipped:,}건 제외)")
-            st.rerun()
-        except Exception as e:
-            st.error(f"적재 실패: {e}")
-
-    st.divider()
-    st.caption("데이터 초기화")
-    if st.button("🗑️ 저장 데이터 초기화", type="secondary"):
-        data_dir = Path("data")
-        for fname in _DATA_FILENAMES.values():
-            fp = data_dir / fname
-            if fp.exists():
-                fp.unlink()
-        if APP_CONFIG_PATH.exists():
-            APP_CONFIG_PATH.unlink()
-        st.session_state.clear()
         st.rerun()
 
 # ── 데이터 로드 ────────────────────────────────────────────────────────
@@ -262,6 +221,30 @@ statuses = _compute_statuses(
 # PDF 있는 Q코드만 목록에 표시
 qcodes_with_pdf = [q for q in qcode_list if statuses.get(q, (None, False))[1]]
 
+# ── 초반 사전 검증: 앞단 7개 미리 채우기 ─────────────────────────────
+# Streamlit은 위에서부터 계속 재실행되므로, session_state 플래그로 1회만 수행합니다.
+PRELOAD_COUNT = 7
+if not st.session_state.get("_preloaded_first7_done", False):
+    qcodes_to_preload = qcodes_with_pdf[:PRELOAD_COUNT]
+    if qcodes_to_preload:
+        st.session_state["_preloaded_first7_done"] = True
+        st.sidebar.caption(f"초기 사전 검증 중… ({len(qcodes_to_preload)}개)")
+        with st.spinner("앞단 7개 Q코드 사전 검증 중..."):
+            for q_code in qcodes_to_preload:
+                if q_code in st.session_state["validation_results"]:
+                    continue
+                try:
+                    st.session_state["validation_results"][q_code] = run_qcode_validation(
+                        q_code=q_code,
+                        qcode_master_df=qcode_master_df,
+                        spec_detail_df=spec_detail_df,
+                        pdf_mapping_df=pdf_mapping_df,
+                        maker_list_df=maker_list_df,
+                        pdf_base_dir=pdf_base_dir,
+                    )
+                except Exception as e:
+                    st.session_state["validation_results"][q_code] = {"error": str(e)}
+
 
 # ── 검증 결과 다이얼로그 ───────────────────────────────────────────────
 @st.dialog("검증 결과", width="large")
@@ -310,6 +293,14 @@ def show_validation_dialog(q_code: str) -> None:
     model_pdf_val  = judgment.get("model_pdf_val") or "(없음)"
     model_result   = "일치" if model_matched else "불일치"
     maker_result, maker_pdf_val = _compare_maker(sys_maker, best_maker, similarity)
+
+    # Maker 목록에 없거나(=best_matched_maker가 None) 해서 "(없음)"으로 표시되더라도,
+    # PDF 텍스트에서 시스템 메이커명이 실제로 감지된 경우에는
+    # "동일 메이커"로 UI 판정을 보정한다.
+    maker_in_pdf_text = bool(judgment.get("maker_in_pdf_text"))
+    if maker_pdf_val == "(없음)" and maker_in_pdf_text:
+        maker_result = "일치"
+        maker_pdf_val = sys_maker
 
     agent_state = result.get("agent_state")
     step4 = agent_state.step4_result if agent_state else None
@@ -372,10 +363,26 @@ def show_validation_dialog(q_code: str) -> None:
 
     # 사양별 PDF 추출값 사전 계산
     spec_pdf_vals: list[dict] = []
+    online_hints = judgment.get("online_spec_hints") or []
+    online_map: dict[str, str] = {}
+    for h in online_hints:
+        if not isinstance(h, dict):
+            continue
+        t = (h.get("title") or "").strip()
+        v = (h.get("value") or "").strip()
+        if t and v:
+            online_map[t] = v
     for spec in expected_specs:
         title = spec.get("title", "")
         value = spec.get("value", "") or "(미입력)"
         pdf_val, match_st = _extract_pdf_value(title, value, pdf_text)
+        # PDF에서 값이 안 잡히거나 불일치면 웹에서 긁어온 값으로 대체(가능할 때)
+        if match_st != "일치" and title in online_map:
+            web_val = online_map[title]
+            value_norm = _normalize(value)
+            web_val_norm = _normalize(web_val)
+            pdf_val = web_val + " (웹)"
+            match_st = "일치" if value_norm and value_norm in web_val_norm else "불일치"
         spec_pdf_vals.append({"title": title, "sys_value": value,
                                "pdf_value": pdf_val, "match": match_st})
 
