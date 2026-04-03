@@ -178,19 +178,19 @@ st.markdown("""
 /* ── 결과 배지 ── */
 .badge-approved {
     display:inline-block; background:#00a651; color:#fff;
-    padding:3px 12px; border-radius:12px; font-size:12px; font-weight:700;
+    padding:3px 12px; border-radius:12px; font-size:13.8px; font-weight:700;
 }
 .badge-rejected {
     display:inline-block; background:#cc0000; color:#fff;
-    padding:3px 12px; border-radius:12px; font-size:12px; font-weight:700;
+    padding:3px 12px; border-radius:12px; font-size:13.8px; font-weight:700;
 }
 .badge-pending {
     display:inline-block; background:#ff6b00; color:#fff;
-    padding:3px 12px; border-radius:12px; font-size:12px; font-weight:700;
+    padding:3px 12px; border-radius:12px; font-size:13.8px; font-weight:700;
 }
 .badge-skipped {
     display:inline-block; background:#666; color:#fff;
-    padding:3px 12px; border-radius:12px; font-size:12px; font-weight:700;
+    padding:3px 12px; border-radius:12px; font-size:13.8px; font-weight:700;
 }
 
 /* ── 테이블 행 색상 ── */
@@ -843,17 +843,17 @@ def show_validation_dialog(q_code: str) -> None:
 # ── Q코드 목록 ────────────────────────────────────────────────────────
 _OUTCOME_TO_STATUS = {
     "APPROVED": "자동승인",
-    "REJECTED": "자동회송",
+    "REJECTED": "시스템 회송",
     "PENDING":  "사람승인",
 }
 _STATUS_BADGE = {
     "자동승인": '<span class="badge-approved">✓ 자동승인</span>',
-    "자동회송": '<span class="badge-rejected">✗ 자동회송</span>',
+    "시스템 회송": '<span class="badge-rejected">✗ 시스템 회송</span>',
     "사람승인": '<span class="badge-pending">⚑ 사람승인</span>',
 }
 _STATUS_BADGE_DIM = {
     "자동승인": '<span class="badge-skipped">○ 승인 추정</span>',
-    "자동회송": '<span class="badge-skipped">○ 회송 추정</span>',
+    "시스템 회송": '<span class="badge-skipped">○ 회송 추정</span>',
     "사람승인": '<span class="badge-skipped">○ 검토 추정</span>',
 }
 
@@ -889,7 +889,7 @@ mc1, mc2, mc3, mc4 = st.columns(4)
 _pct = lambda n: f"{n/total*100:.1f}%" if total > 0 else "0%"
 _unverified = total - sum(cnt_map.values())
 mc1.metric("✅ 자동승인", cnt_map["APPROVED"], delta=_pct(cnt_map["APPROVED"]), delta_color="off")
-mc2.metric("❌ 자동회송", cnt_map["REJECTED"], delta=_pct(cnt_map["REJECTED"]), delta_color="off")
+mc2.metric("❌ 시스템 회송", cnt_map["REJECTED"], delta=_pct(cnt_map["REJECTED"]), delta_color="off")
 mc3.metric("⏳ 사람승인", cnt_map["PENDING"],  delta=_pct(cnt_map["PENDING"]),  delta_color="off")
 mc4.metric("⬜ 미검증",   _unverified,          delta=_pct(_unverified),          delta_color="off")
 
@@ -914,7 +914,7 @@ hcols = st.columns([2, 2, 2, 3, 2, 1])
 labels = ["**Q-Code**", "**품명**", "**제조사**", "**모델명**", "**검증 결과**", "**상세**"]
 for i, label in enumerate(labels):
     hcols[i].markdown(
-        f'<span style="color:#003087;font-size:13px;font-weight:700;">{label.strip("*")}</span>',
+        f'<span style="color:#003087;font-size:15px;font-weight:700;">{label.strip("*")}</span>',
         unsafe_allow_html=True,
     )
 st.divider()
@@ -925,13 +925,19 @@ for row in summary_rows:
     c1, c2, c3, c4, c5, c6 = st.columns([2, 2, 2, 3, 2, 1])
     q_label = f"⚠️ {q}" if is_known_error_code(q) else q
     c1.markdown(
-        f'<span style="font-size:13px;font-weight:600;color:#003087;">{q_label}</span>',
+        f'<span style="font-size:15px;font-weight:600;color:#003087;">{q_label}</span>',
         unsafe_allow_html=True,
     )
-    c2.write(row["품명"])
-    c3.write(row["제조사"])
+    c2.markdown(
+        f'<span style="font-size:15px;">{row["품명"]}</span>',
+        unsafe_allow_html=True,
+    )
+    c3.markdown(
+        f'<span style="font-size:15px;">{row["제조사"]}</span>',
+        unsafe_allow_html=True,
+    )
     c4.markdown(
-        f'<span style="font-size:12px;font-family:monospace;">{row["모델명"]}</span>',
+        f'<span style="font-size:13.8px;font-family:monospace;">{row["모델명"]}</span>',
         unsafe_allow_html=True,
     )
 

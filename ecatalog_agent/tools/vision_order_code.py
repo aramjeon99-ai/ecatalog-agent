@@ -80,8 +80,17 @@ def is_drawing_document(
     text_lower = (pdf_text or "").lower()
     kw_hits = sum(1 for k in _DRAWING_KEYWORDS if k in text_lower)
 
-    # 판단: 페이지 적고 (파일명 암시 OR 키워드 2개 이상)
-    return n_pages <= 4 and (fname_hints or kw_hits >= 2)
+    # 이미지 기반 PDF: 텍스트 레이어가 거의 없음 (스캔 도면)
+    # ---PAGE--- 구분자만 있고 실제 텍스트가 150자 미만이면 이미지 전용으로 판단
+    stripped_text = text_lower.replace("---page---", "").strip()
+    is_image_only = len(stripped_text) < 150
+
+    # 판단: 페이지 적고 (파일명 암시 OR 키워드 2개 이상 OR 이미지 전용 1-2페이지)
+    if n_pages <= 4 and (fname_hints or kw_hits >= 2):
+        return True
+    if n_pages <= 2 and is_image_only:
+        return True
+    return False
 
 
 def _split_pdf_pages(full_text: str) -> list[str]:
