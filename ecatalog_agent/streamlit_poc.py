@@ -12,7 +12,7 @@ import pandas as pd
 from rapidfuzz import fuzz
 
 from ecatalog_agent.db.logger import init_db
-from ecatalog_agent.models.state import ErrorFlag, NPRRecord
+from ecatalog_agent.models.state import ErrorFlag, NPRRecord, StepResult
 from ecatalog_agent.tools.pdf_parser import pdf_parse
 from ecatalog_agent.utils.order_code_pdf_match import model_matches_order_code_table, normalize_model_compact
 from ecatalog_agent.utils.text_normalize import normalize_maker
@@ -104,6 +104,7 @@ _DATA_FILENAMES = {
     "system_data": "system_data.xlsx",   # 3-sheet Excel (Pneumatic Cylinder / AC Geared Motor / Protection Relay)
     "pdf_mapping": "pdf_mapping.xlsx",   # Q-Code → Model-1 첨부파일명
     "maker_list": "maker_list.xlsx",     # Manufacturer 기준 목록
+    "existing_data": "existing_data.xlsx",  # 중복 검사용 기존 처리 데이터
 }
 
 # 사양이 아닌 고정 컬럼 (시트별 공통) — 이 외 컬럼은 모두 사양값으로 처리
@@ -333,6 +334,14 @@ def get_qcode_context(
     # Parse expected specs from spec_detail sheet.
     expected_specs: list[dict[str, str]] = []
 
+    def _is_null_spec_value(v: str) -> bool:
+        """9999 / NONE / OTHERS / - / 없음 등 실질적 빈값 판단."""
+        normalized = v.strip().upper().replace(" ", "")
+        return normalized in {
+            "9999", "NONE", "OTHERS", "OTHER", "N/A", "NA",
+            "없음", "-", "–", "—", "0", "",
+        }
+
     spec_title_cols = [
         c for c in spec_rows.columns if re.match(r"^SPEC_TITLE_\d+(?:\.\d+)?$", str(c).strip().upper())
     ]
@@ -352,7 +361,9 @@ def get_qcode_context(
                     continue
                 val = row.get(col)
                 if val is not None and str(val).strip() and str(val).strip().lower() != "nan":
-                    expected_specs.append({"title": str(col).strip(), "value": str(val).strip()})
+                    v_str = str(val).strip()
+                    if not _is_null_spec_value(v_str):
+                        expected_specs.append({"title": str(col).strip(), "value": v_str})
     else:
         # Build title/value pairs by index
         for _, r in spec_rows.iterrows():
@@ -375,6 +386,8 @@ def get_qcode_context(
                 title_s = str(title).strip()
                 value_s = str(value).strip()
                 if not title_s or not value_s or title_s.lower() == "nan" or value_s.lower() == "nan":
+                    continue
+                if _is_null_spec_value(value_s):
                     continue
                 expected_specs.append({"title": title_s, "value": value_s})
 
@@ -733,6 +746,7 @@ def run_qcode_validation(
     )
     pdf_maker_verified = bool(maker_in_pdf)
     vision_result: dict[str, Any] | None = None
+    drawing_result: dict[str, Any] | None = None
     maker_hint_relax_reason: str | None = None
 
     _api_key = os.environ.get("OPENAI_API_KEY", "").strip()
@@ -744,10 +758,54 @@ def run_qcode_validation(
     _prefer_vision = bool((maker_profile or {}).get("prefer_vision_for_order_code"))
     _always_vision = bool((maker_profile or {}).get("always_run_vision_with_api"))
 
+    # ── 도면 형식 감지 → 도면 전용 Vision 2-pass ─────────────────────
+    from ecatalog_agent.tools.vision_order_code import is_drawing_document, run_drawing_validation
+
+    _is_drawing = bool(
+        ctx.pdf_path
+        and ctx.pdf_exists
+        and _api_key
+        and is_drawing_document(
+            str(ctx.pdf_path),
+            ctx.pdf_text_sample or "",
+            pdf_filename=ctx.pdf_filename or "",
+        )
+    )
+    if _is_drawing:
+        try:
+            drawing_result = run_drawing_validation(
+                pdf_path=str(ctx.pdf_path),
+                maker_name=(ctx.maker_name or "").strip(),
+                model_name=(ctx.model_name or "").strip(),
+            )
+        except Exception as e:
+            drawing_result = {"ok": False, "error": str(e)}
+
+    if drawing_result and drawing_result.get("ok"):
+        # DRAWING NO. → 모델 일치 확인
+        if drawing_result.get("drawing_no_matches_model") is True:
+            model_matched = True
+            model_pdf_val = (
+                f"도면 DRAWING NO.: {drawing_result.get('drawing_no')} "
+                f"({drawing_result.get('reason_ko', '')})"
+            )[:200]
+            state.error_flags = [f for f in state.error_flags if f.code != "ERR_MODEL_MISMATCH"]
+        elif drawing_result.get("drawing_no_matches_model") is False:
+            # 도면 번호가 명확히 불일치 → 모델 불일치 처리
+            model_matched = False
+
+        # 표제란 제조사 → 메이커 확인
+        if drawing_result.get("is_same_maker") is True:
+            pdf_maker_verified = True
+            state.error_flags = [f for f in state.error_flags if f.code not in ("ERR_NO_LOGO", "ERR_PDF_MAKER_SOURCE")]
+        elif drawing_result.get("is_same_maker") is False and not maker_in_pdf:
+            pdf_maker_verified = False
+
     _should_run_vision = bool(
         ctx.pdf_path
         and ctx.pdf_exists
         and _api_key
+        and not _is_drawing  # 도면은 drawing_result로 처리했으므로 중복 호출 방지
         and (
             not model_matched
             or "형번체계·분해일치" in model_pdf_val
@@ -801,6 +859,18 @@ def run_qcode_validation(
     if pdf_maker_verified:
         state.error_flags = [f for f in state.error_flags if f.code != "ERR_PDF_MAKER_SOURCE"]
 
+    # 포괄적 검증에서 model·maker 확정 시 에이전트 STEP1 결과도 PASS로 보정
+    # (에이전트 자체 PDF 매칭은 단순 퍼지 검색 기반이라 신뢰도가 낮게 나올 수 있음)
+    if model_matched and maker_matched and state.step1_result and state.step1_result.status == "FAIL":
+        state.step1_result = StepResult(
+            step_name="STEP1",
+            status="PASS",
+            confidence=max(state.step1_result.confidence, 0.85),
+            details={**(state.step1_result.details or {}), "overridden_by_comprehensive_check": True},
+            flags_raised=[],
+            processing_time_ms=state.step1_result.processing_time_ms,
+        )
+
     if not model_matched:
         already = {f.code for f in state.error_flags}
         if "ERR_MODEL_MISMATCH" not in already:
@@ -844,6 +914,9 @@ def run_qcode_validation(
 
     # ── 웹 검색 2차 검증 (모델 불일치, 옵션 미확인, 또는 메이커 불일치 시) ──
     _option_uncertain = "앞부분일치" in model_pdf_val and "옵션미확인" in model_pdf_val
+    # 앞부분만 일치(옵션코드 미확인) → 웹/비전으로 해소 전까지 불일치로 처리
+    if _option_uncertain:
+        model_matched = False
     web_result: dict[str, Any] | None = None
     if not model_matched or not maker_matched or _option_uncertain:
         try:
@@ -1022,6 +1095,8 @@ def run_qcode_validation(
         "web_search_result": web_result,
         "online_spec_hints": (web_result or {}).get("online_spec_hints") if web_result else None,
         "vision_order_code_result": vision_result,
+        "drawing_validation_result": drawing_result,
+        "is_drawing_document": _is_drawing,
         "pdf_maker_verified": pdf_maker_verified,
         "maker_in_pdf_text": maker_in_pdf,
         "spec_hints_vision": (

@@ -17,6 +17,7 @@ import streamlit as st
 
 from ecatalog_agent.streamlit_poc import (
     APP_CONFIG_PATH,
+    STREAMLIT_DB_PATH,
     get_qcode_list,
     is_known_error_code,
     load_app_config,
@@ -27,34 +28,184 @@ from ecatalog_agent.streamlit_poc import (
     save_app_config,
     _DATA_FILENAMES,
 )
+from ecatalog_agent.db.logger import load_duplicate_baseline, get_duplicate_baseline_count
 
-st.set_page_config(page_title="e-Catalog POC Validation", layout="wide")
-st.title("e-Catalog POC 검증 화면")
+st.set_page_config(page_title="POSCO MRO e-Catalog 검증", layout="wide", page_icon="🏭")
 
-# ── 등록할 PDF 가이드 (초보용) ─────────────────────────────────────
-st.markdown("## 등록할 PDF 가이드")
-st.markdown(
-    "이 화면은 `사양검증자료(PDF)`에서 **모델(주문 코드/형번)**, **제조사**, **사양(수치/표)** 을 확인할 수 있어야 등록이 가능합니다."
-)
-st.markdown("다음 기준을 만족하는 문서를 첨부해 주세요.")
-st.markdown(
-    "- `권장(통과 가능성이 높음)`: 제조사 발행 **카탈로그/데이터시트(스펙표 포함)/도면/명판 관련 문서**"
-)
-st.markdown(
-    "- `필수로 확인돼야 함`: PDF 안에서 제조사 근거(로고/상호/웹주소 등)와, 제품 표/도해에서 **모델(형번) 표현** 및 필요한 **사양 값**이 확인돼야 합니다."
-)
-st.markdown(
-    "- `제외(반려 가능)`: **견적서/발주서/프로포마** 문서. (특히 `견적`/`발주` 같은 제목이 있어도 **수량 + 금액**이 같이 기재된 경우 견적서로 판단해 제외합니다.)"
-)
-st.markdown(
-    "- `주의`: 대리점/유통사 자료처럼 제조사 발행이 불명확하면 `제조사 자료 아님`으로 반려될 수 있습니다."
-)
-st.markdown(
-    "- `이미지로만 있는 경우(OCR/비전)`: PDF에서 모델/제조사가 텍스트가 아니라 이미지로만 보이면, GPT 비전(OCR)으로 확인을 시도합니다. 비전 사용은 `OPENAI_API_KEY`가 설정되어 있을 때만 동작합니다."
-)
-st.markdown(
-    "- `중복`: 같은 `모델 + 메이커` 조합이 이미 처리 이력이 있으면 `중복`으로 자동 회송될 수 있습니다. 테스트 중이면 `전체 재검증`을 사용하거나 로컬 처리 이력을 초기화해야 합니다."
-)
+# ── POSCO MRO e-Catalog 스타일 CSS ───────────────────────────────────────
+st.markdown("""
+<style>
+/* ── 전체 배경 ── */
+.stApp { background-color: #f4f6f9; }
+
+/* ── 최상단 헤더 바 ── */
+[data-testid="stAppViewContainer"] > .main > div:first-child { padding-top: 0 !important; }
+
+/* ── 사이드바 ── */
+[data-testid="stSidebar"] {
+    background: linear-gradient(180deg, #003087 0%, #00205c 100%);
+    border-right: none;
+}
+[data-testid="stSidebar"] * { color: #fff !important; }
+[data-testid="stSidebar"] .stButton > button {
+    background: #ff6b00;
+    color: #fff !important;
+    border: none;
+    border-radius: 4px;
+    font-weight: 600;
+    width: 100%;
+}
+[data-testid="stSidebar"] .stButton > button:hover { background: #e05c00; }
+[data-testid="stSidebar"] input,
+[data-testid="stSidebar"] select {
+    background: rgba(255,255,255,0.15) !important;
+    color: #fff !important;
+    border: 1px solid rgba(255,255,255,0.3) !important;
+}
+[data-testid="stSidebar"] label { color: #cce0ff !important; }
+[data-testid="stSidebar"] .stFileUploader { background: rgba(255,255,255,0.07); border-radius: 6px; padding: 4px 8px; }
+
+/* ── 헤더 배너 ── */
+.posco-header {
+    background: linear-gradient(135deg, #003087 60%, #0057b8 100%);
+    border-radius: 8px;
+    padding: 20px 32px 16px 32px;
+    margin-bottom: 18px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    box-shadow: 0 2px 8px rgba(0,48,135,0.18);
+}
+.posco-header .brand { font-size: 13px; font-weight: 700; color: #7bb3ff; letter-spacing: 2px; }
+.posco-header .title { font-size: 26px; font-weight: 800; color: #fff; margin: 0; }
+.posco-header .subtitle { font-size: 13px; color: #a8c8ff; margin-top: 2px; }
+.posco-header .badge {
+    margin-left: auto;
+    background: rgba(255,255,255,0.15);
+    border-radius: 20px;
+    padding: 6px 16px;
+    font-size: 12px; color: #fff;
+}
+
+/* ── 카드 ── */
+.posco-card {
+    background: #fff;
+    border-radius: 8px;
+    padding: 16px 20px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+    margin-bottom: 12px;
+    border-left: 4px solid #003087;
+}
+.posco-card.orange { border-left-color: #ff6b00; }
+.posco-card.green  { border-left-color: #00a651; }
+.posco-card.red    { border-left-color: #cc0000; }
+
+/* ── 결과 배지 ── */
+.badge-approved {
+    display:inline-block; background:#00a651; color:#fff;
+    padding:3px 12px; border-radius:12px; font-size:12px; font-weight:700;
+}
+.badge-rejected {
+    display:inline-block; background:#cc0000; color:#fff;
+    padding:3px 12px; border-radius:12px; font-size:12px; font-weight:700;
+}
+.badge-pending {
+    display:inline-block; background:#ff6b00; color:#fff;
+    padding:3px 12px; border-radius:12px; font-size:12px; font-weight:700;
+}
+.badge-skipped {
+    display:inline-block; background:#666; color:#fff;
+    padding:3px 12px; border-radius:12px; font-size:12px; font-weight:700;
+}
+
+/* ── 테이블 행 색상 ── */
+.row-approved { background: #e8f5e9 !important; }
+.row-rejected { background: #ffebee !important; }
+.row-pending  { background: #fff3e0 !important; }
+
+/* ── 기본 버튼 ── */
+.stButton > button[kind="primary"] {
+    background: #003087 !important;
+    border: none !important;
+    color: #fff !important;
+    font-weight: 600 !important;
+    border-radius: 4px !important;
+}
+.stButton > button[kind="primary"]:hover { background: #0057b8 !important; }
+
+/* ── 탭 ── */
+.stTabs [data-baseweb="tab-list"] {
+    background: #fff;
+    border-radius: 8px 8px 0 0;
+    border-bottom: 2px solid #003087;
+    padding: 0 8px;
+}
+.stTabs [data-baseweb="tab"] {
+    font-weight: 600;
+    color: #003087;
+    padding: 8px 20px;
+}
+.stTabs [aria-selected="true"] {
+    background: #003087 !important;
+    color: #fff !important;
+    border-radius: 6px 6px 0 0;
+}
+
+/* ── expander ── */
+.streamlit-expanderHeader {
+    background: #eef3fb !important;
+    border-radius: 6px !important;
+    font-weight: 600 !important;
+    color: #003087 !important;
+}
+
+/* ── 상단 패딩 조정 ── */
+.block-container { padding-top: 1.2rem !important; }
+
+/* ── metric ── */
+[data-testid="stMetric"] {
+    background: #fff;
+    border-radius: 8px;
+    padding: 12px 16px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.07);
+}
+[data-testid="stMetricLabel"] { color: #003087 !important; font-weight: 600; }
+[data-testid="stMetricValue"] { color: #003087 !important; font-size: 2rem !important; }
+</style>
+""", unsafe_allow_html=True)
+
+# ── 헤더 배너 ─────────────────────────────────────────────────────────────
+st.markdown("""
+<div class="posco-header">
+  <div>
+    <div class="brand">POSCO</div>
+    <div class="title">MRO e-Catalog</div>
+    <div class="subtitle">공급사 사양검증 자동화 시스템</div>
+  </div>
+  <div class="badge">🏭 검토/승인</div>
+</div>
+""", unsafe_allow_html=True)
+
+# ── PDF 등록 기준 안내 ────────────────────────────────────────────────────
+with st.expander("📋 사양검증자료(PDF) 등록 기준 안내", expanded=False):
+    st.markdown("""
+<div class="posco-card">
+<b>검증 가능한 문서 유형</b><br>
+✅ 제조사 발행 카탈로그 / 데이터시트 / 도면 / 명판 관련 문서<br>
+✅ PDF 내 제조사 근거(로고·상호·웹주소)와 모델(형번) + 사양값이 확인되어야 함
+</div>
+<div class="posco-card orange">
+<b>반려 대상</b><br>
+❌ 견적서·발주서 — 수량 + 금액이 함께 기재된 경우 자동 회송<br>
+❌ 대리점·유통사 자료 — 제조사 발행 불명확 시 반려<br>
+❌ 중복 — 동일 모델+메이커 이미 등록 이력 존재 시 회송
+</div>
+<div class="posco-card">
+<b>이미지 기반 PDF (도면·OCR)</b><br>
+🔍 텍스트 추출 불가 시 GPT Vision으로 DRAWING NO. 및 사양 표 자동 추출<br>
+🔑 <code>OPENAI_API_KEY</code> 환경 변수 설정 시 동작
+</div>
+""", unsafe_allow_html=True)
 
 # ── 사이드바: 기준 데이터 등록 ─────────────────────────────────────────
 config = load_app_config()
@@ -85,6 +236,14 @@ with st.sidebar:
         "industrial_manufacturers_list.xlsx", type=["xlsx", "xls", "csv"], key="maker"
     )
 
+    st.markdown("**④ 중복 검사용 기존 데이터** (선택, model_name·maker_name 컬럼 필요)")
+    existing_data_file = st.file_uploader(
+        "기존data(중복검색용)_system_data_200.xlsx", type=["xlsx", "xls"], key="existing_data"
+    )
+    dup_count = get_duplicate_baseline_count(STREAMLIT_DB_PATH)
+    if dup_count > 0:
+        st.caption(f"현재 중복 기준 데이터: {dup_count:,}건 적재됨")
+
     saved_ok = False
     if st.button("데이터 저장", type="primary"):
         if not pdf_base_dir_input.strip():
@@ -98,6 +257,24 @@ with st.sidebar:
             (data_dir / _DATA_FILENAMES["pdf_mapping"]).write_bytes(pdf_mapping_file.getvalue())
             if maker_list_file:
                 (data_dir / _DATA_FILENAMES["maker_list"]).write_bytes(maker_list_file.getvalue())
+            if existing_data_file:
+                existing_df = pd.read_excel(existing_data_file, dtype=str)
+                col_map = {c.lower().replace(" ", "_"): c for c in existing_df.columns}
+                model_col = next((col_map[k] for k in col_map if "model" in k), None)
+                maker_col = next((col_map[k] for k in col_map if "maker" in k), None)
+                if model_col and maker_col:
+                    rows = [
+                        {
+                            "request_id": str(i),
+                            "model_name": str(r.get(model_col) or ""),
+                            "maker_name": str(r.get(maker_col) or ""),
+                        }
+                        for i, r in existing_df.iterrows()
+                    ]
+                    inserted, skipped = load_duplicate_baseline(STREAMLIT_DB_PATH, rows)
+                    st.info(f"중복 기준 데이터 적재 완료: {inserted}건 (건너뜀 {skipped}건)")
+                else:
+                    st.warning("④ 파일에서 model_name / maker_name 컬럼을 찾지 못했습니다.")
             save_app_config(
                 {
                     "pdf_base_dir": pdf_base_dir_input.strip(),
@@ -252,7 +429,7 @@ def show_validation_dialog(q_code: str) -> None:
     st.subheader(f"Q코드: {q_code}")
 
     if is_known_error_code(q_code):
-        st.warning("⚠️ Q3 오류코드 — 모델·메이커 불일치 또는 잘못 등록된 자료입니다.")
+        st.info("ℹ️ Q3 코드 — 모델·메이커 불일치 이력이 있는 코드입니다. 검토 결과를 확인하세요.")
 
     # 캐시된 결과 사용, 없으면 검증 실행
     if q_code not in st.session_state["validation_results"]:
@@ -334,6 +511,33 @@ def show_validation_dialog(q_code: str) -> None:
                 f"첨부 PDF 제조사 일치(텍스트 또는 GPT 비전): "
                 f"{'✅' if pdf_mv else '❌'}"
             )
+        drawing_r = judgment.get("drawing_validation_result")
+        if judgment.get("is_drawing_document"):
+            with st.expander("도면 검증 결과 (DRAWING NO. / SPEC BOX)", expanded=True):
+                if drawing_r and drawing_r.get("ok"):
+                    st.markdown(
+                        f"**DRAWING NO.** `{drawing_r.get('drawing_no') or '-'}` &nbsp; "
+                        f"**DRAWING NAME** `{drawing_r.get('drawing_name') or '-'}`"
+                    )
+                    match_icon = "✅" if drawing_r.get("drawing_no_matches_model") else "❌"
+                    maker_icon = "✅" if drawing_r.get("is_same_maker") else "❌"
+                    st.markdown(
+                        f"모델 일치: {match_icon} &nbsp;|&nbsp; "
+                        f"제조사 일치: {maker_icon} &nbsp;|&nbsp; "
+                        f"표제란 제조사: `{drawing_r.get('maker_in_titleblock') or '-'}`"
+                    )
+                    if drawing_r.get("reason_ko"):
+                        st.caption(drawing_r["reason_ko"])
+                    specs = drawing_r.get("specs") or []
+                    if specs:
+                        st.markdown("**SPEC BOX 추출값:**")
+                        spec_df = pd.DataFrame(specs)
+                        st.dataframe(spec_df, use_container_width=True, hide_index=True)
+                elif drawing_r:
+                    st.warning(drawing_r.get("error", "도면 Vision 호출 실패"))
+                else:
+                    st.caption("도면 감지됨 — OPENAI_API_KEY 설정 시 Vision 검증 가능")
+
         vision_r = judgment.get("vision_order_code_result")
         if vision_r:
             with st.expander("GPT 비전 — 형번·제조사 자료 판별", expanded=False):
@@ -562,14 +766,14 @@ _OUTCOME_TO_STATUS = {
     "PENDING":  "사람승인",
 }
 _STATUS_BADGE = {
-    "자동승인": ":blue[● 자동승인]",
-    "자동회송": ":red[● 자동회송]",
-    "사람승인": ":orange[● 사람승인]",
+    "자동승인": '<span class="badge-approved">✓ 자동승인</span>',
+    "자동회송": '<span class="badge-rejected">✗ 자동회송</span>',
+    "사람승인": '<span class="badge-pending">⚑ 사람승인</span>',
 }
 _STATUS_BADGE_DIM = {
-    "자동승인": ":grey[○ 자동승인 추정]",
-    "자동회송": ":grey[○ 자동회송 추정]",
-    "사람승인": ":grey[○ 사람승인 추정]",
+    "자동승인": '<span class="badge-skipped">○ 승인 추정</span>',
+    "자동회송": '<span class="badge-skipped">○ 회송 추정</span>',
+    "사람승인": '<span class="badge-skipped">○ 검토 추정</span>',
 }
 
 # 요약 테이블 빌드 + PDF 없는 항목 제외
@@ -593,14 +797,21 @@ for row in summary_rows:
     if row["_outcome"] in cnt_map:
         cnt_map[row["_outcome"]] += 1
 
-st.subheader(f"Q코드 목록 (PDF 있는 항목: {total}건)")
-mc1, mc2, mc3 = st.columns(3)
-mc1.metric("🔵 자동승인", cnt_map["APPROVED"])
-mc2.metric("🔴 자동회송", cnt_map["REJECTED"])
-mc3.metric("🟠 사람승인", cnt_map["PENDING"])
+st.markdown(f"""
+<div style="display:flex; align-items:center; gap:8px; margin-bottom:12px;">
+  <div style="font-size:18px; font-weight:700; color:#003087;">📋 검토 대상 목록</div>
+  <div style="font-size:13px; color:#666; margin-left:4px;">PDF 있는 항목: <b>{total}</b>건</div>
+</div>
+""", unsafe_allow_html=True)
+
+mc1, mc2, mc3, mc4 = st.columns(4)
+mc1.metric("✅ 자동승인", cnt_map["APPROVED"])
+mc2.metric("❌ 자동회송", cnt_map["REJECTED"])
+mc3.metric("⏳ 사람승인", cnt_map["PENDING"])
+mc4.metric("⬜ 미검증", total - sum(cnt_map.values()))
 
 # 검색 필터
-search = st.text_input("🔍 Q코드 / 품명 / 제조사 검색", value="", placeholder="입력 시 필터링")
+search = st.text_input("🔍 Q코드 / 품명 / 제조사 / 모델명 검색", value="", placeholder="입력 시 필터링")
 if search.strip():
     kw = search.strip().lower()
     summary_rows = [
@@ -617,8 +828,12 @@ if not summary_rows:
 
 # 헤더
 hcols = st.columns([2, 2, 2, 3, 2, 1])
-for i, label in enumerate(["**Q-Code**", "**품명**", "**제조사**", "**모델명**", "**검증 결과**", "**상세**"]):
-    hcols[i].markdown(label)
+labels = ["**Q-Code**", "**품명**", "**제조사**", "**모델명**", "**검증 결과**", "**상세**"]
+for i, label in enumerate(labels):
+    hcols[i].markdown(
+        f'<span style="color:#003087;font-size:13px;font-weight:700;">{label.strip("*")}</span>',
+        unsafe_allow_html=True,
+    )
 st.divider()
 
 # 각 행 렌더링
@@ -626,18 +841,24 @@ for row in summary_rows:
     q = row["Q-Code"]
     c1, c2, c3, c4, c5, c6 = st.columns([2, 2, 2, 3, 2, 1])
     q_label = f"⚠️ {q}" if is_known_error_code(q) else q
-    c1.write(q_label)
+    c1.markdown(
+        f'<span style="font-size:13px;font-weight:600;color:#003087;">{q_label}</span>',
+        unsafe_allow_html=True,
+    )
     c2.write(row["품명"])
     c3.write(row["제조사"])
-    c4.write(row["모델명"])
+    c4.markdown(
+        f'<span style="font-size:12px;font-family:monospace;">{row["모델명"]}</span>',
+        unsafe_allow_html=True,
+    )
 
     outcome = row["_outcome"]
     if outcome:
         status = _OUTCOME_TO_STATUS.get(outcome, "사람승인")
-        c5.markdown(_STATUS_BADGE[status])
+        c5.markdown(_STATUS_BADGE[status], unsafe_allow_html=True)
     else:
         quick_status = statuses.get(q, ("사람승인", True))[0]
-        c5.markdown(_STATUS_BADGE_DIM[quick_status])
+        c5.markdown(_STATUS_BADGE_DIM[quick_status], unsafe_allow_html=True)
 
-    if c6.button("검증", key=f"btn_{q}"):
+    if c6.button("검증", key=f"btn_{q}", type="primary"):
         show_validation_dialog(q)

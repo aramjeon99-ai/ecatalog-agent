@@ -25,7 +25,10 @@ def step6_final_decision(
     for sr in step_results:
         if sr is None:
             continue
-        if sr.confidence < low_confidence_threshold:
+        # PASS 스텝은 confidence 무관하게 PENDING 유발하지 않음.
+        # SKIP 스텝도 confidence가 낮아도 정상적인 "건너뜀"이므로 제외.
+        # FAIL 스텝만 저신뢰도 PENDING 대상으로 간주.
+        if sr.status == "FAIL" and sr.confidence < low_confidence_threshold:
             low_items.append(f"{sr.step_name}({sr.status})={sr.confidence:.2f}")
 
     if low_items:

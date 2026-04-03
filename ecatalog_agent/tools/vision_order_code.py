@@ -41,6 +41,48 @@ _SYSTEM_PROMPT = """당신은 산업 부품 카탈로그 검증 보조입니다.
 이미지는 PDF 페이지를 렌더링한 것입니다. 표·도해·로고를 읽고 JSON만 출력하세요.
 모르는 항목은 null을 사용합니다."""
 
+_DRAWING_SYSTEM_PROMPT = """당신은 기계 도면(Engineering Drawing) 판독 전문가입니다.
+이미지는 산업 부품 도면 PDF를 렌더링한 것입니다.
+도면의 표제란(Title Block)과 사양 표(Specification Box)를 정확히 읽어 JSON만 출력하세요.
+숫자·영문·단위·기호를 있는 그대로 읽어야 합니다. 모르는 항목은 null을 사용합니다."""
+
+# 도면 형식 감지 키워드 (텍스트 레이어 또는 파일명)
+_DRAWING_KEYWORDS = (
+    "drawing no", "dwg no", "dwg. no", "drawing number",
+    "title block", "tolerance", "drawn by", "checked by",
+    "approved by", "scale", "revision", "sheet",
+    "도면", "도번", "공차", "제도", "검도", "승인",
+)
+
+
+def is_drawing_document(
+    pdf_path: str,
+    pdf_text: str,
+    *,
+    pdf_filename: str = "",
+) -> bool:
+    """도면(Engineering Drawing) 형식 PDF 여부 판단.
+
+    조건: 이미지 기반 + 페이지 수 적음 + 도면 키워드/파일명.
+    """
+    try:
+        doc = fitz.open(pdf_path)
+        n_pages = doc.page_count
+        doc.close()
+    except Exception:
+        return False
+
+    # 파일명에 도면 암시 문자열
+    fname_lower = (pdf_filename or "").lower()
+    fname_hints = any(k in fname_lower for k in ("dwg", "도면", "drawing", "assembly", "assy"))
+
+    # 텍스트 레이어 키워드
+    text_lower = (pdf_text or "").lower()
+    kw_hits = sum(1 for k in _DRAWING_KEYWORDS if k in text_lower)
+
+    # 판단: 페이지 적고 (파일명 암시 OR 키워드 2개 이상)
+    return n_pages <= 4 and (fname_hints or kw_hits >= 2)
+
 
 def _split_pdf_pages(full_text: str) -> list[str]:
     if not full_text.strip():
@@ -276,3 +318,187 @@ def maker_evidence_in_pdf_text(
         if a.lower() in low:
             return True
     return False
+
+
+def _gpt_vision_drawing(
+    *,
+    maker_name: str,
+    model_name: str,
+    page_images: list[tuple[int, bytes]],
+    model: str | None = None,
+) -> dict[str, Any]:
+    """도면 전용 GPT Vision 호출.
+
+    표제란(DRAWING NO., DRAWING NAME, 제조사 로고)과
+    사양 표(SPECIFICATIONS / SPEC BOX)를 함께 추출한다.
+    2회 호출: 1회차 전체 파악, 2회차 사양 표 재확인(정밀도 향상).
+    """
+    try:
+        from openai import OpenAI
+    except ImportError:
+        return {"ok": False, "error": "openai 패키지 없음"}
+
+    api_key = os.environ.get("OPENAI_API_KEY", "").strip()
+    if not api_key:
+        return {"ok": False, "error": "OPENAI_API_KEY 없음"}
+
+    client = OpenAI(api_key=api_key)
+    model_id = (model or os.environ.get("OPENAI_VISION_MODEL", "gpt-4o")).strip()
+
+    def _build_image_content(images: list[tuple[int, bytes]]) -> list[dict]:
+        content: list[dict] = []
+        for idx, (_, png) in enumerate(images):
+            content.append({"type": "text", "text": f"[도면 페이지 {idx + 1}]"})
+            content.append({
+                "type": "image_url",
+                "image_url": {"url": _png_to_data_url(png), "detail": "high"},
+            })
+        return content
+
+    # ── 1차 호출: 표제란 + 사양 표 전체 파악 ──────────────────────────
+    prompt_1 = "\n".join([
+        f"시스템 등록 모델명: {model_name}",
+        f"시스템 등록 제조사: {maker_name}",
+        "",
+        "이 도면 이미지에서 다음 항목을 찾아 JSON으로 출력하세요:",
+        "",
+        "1. 표제란(Title Block, 보통 우측 하단):",
+        "   - drawing_no: DRAWING NO. 또는 DWG NO. 값 (정확히 읽을 것)",
+        "   - drawing_name: DRAWING NAME 값",
+        "   - maker_in_titleblock: 제조사/회사명 또는 로고 텍스트",
+        "   - revision: REVISION 값",
+        "   - scale: SCALE 값",
+        "",
+        "2. 사양 표(SPECIFICATIONS 또는 SPEC BOX):",
+        "   - specs: 표에서 읽은 항목을 [{\"title\": ..., \"value\": ...}] 배열로",
+        "   (예: BORE SIZE, STROKE, PRESSURE, FLUID, TEMPERATURE 등)",
+        "",
+        "3. 도면 판단:",
+        "   - is_drawing: 이 문서가 도면 형식인지 (true/false)",
+        "   - is_same_maker: 표제란의 제조사가 시스템 등록 제조사와 동일한지 (true/false/null)",
+        "   - drawing_no_matches_model: drawing_no가 시스템 모델명과 일치 또는 포함관계인지 (true/false/null)",
+        "   - reason_ko: 판단 근거 한 줄",
+        "",
+        "출력: JSON 한 개만. 없는 값은 null.",
+    ])
+
+    content_1: list[dict] = [{"type": "text", "text": prompt_1}]
+    content_1.extend(_build_image_content(page_images))
+
+    try:
+        resp1 = client.chat.completions.create(
+            model=model_id,
+            messages=[
+                {"role": "system", "content": _DRAWING_SYSTEM_PROMPT},
+                {"role": "user", "content": content_1},
+            ],
+            max_tokens=1500,
+            temperature=0.1,
+        )
+        raw1 = (resp1.choices[0].message.content or "").strip()
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+    parsed1 = _parse_json_object(raw1)
+    if not parsed1:
+        return {"ok": False, "error": "1차 JSON 파싱 실패", "raw_text": raw1}
+
+    # ── 2차 호출: 사양 표 정밀 재확인 ─────────────────────────────────
+    existing_specs = parsed1.get("specs") or []
+    prompt_2 = "\n".join([
+        "위 도면의 SPECIFICATIONS 표를 다시 한 번 꼼꼼히 읽어주세요.",
+        "1차에서 추출한 사양 목록:",
+        json.dumps(existing_specs, ensure_ascii=False),
+        "",
+        "누락되거나 잘못 읽은 항목이 있으면 수정하고,",
+        "확실히 읽을 수 있는 항목을 [{\"title\": ..., \"value\": ...}] 배열로 다시 출력하세요.",
+        "단위(mm, MPa, °C 등)도 value에 포함하세요.",
+        "",
+        "출력: {\"specs\": [...]} JSON 한 개만.",
+    ])
+
+    content_2: list[dict] = [{"type": "text", "text": prompt_2}]
+    content_2.extend(_build_image_content(page_images))
+
+    try:
+        resp2 = client.chat.completions.create(
+            model=model_id,
+            messages=[
+                {"role": "system", "content": _DRAWING_SYSTEM_PROMPT},
+                {"role": "user", "content": content_1},
+                {"role": "assistant", "content": raw1},
+                {"role": "user", "content": content_2},
+            ],
+            max_tokens=1000,
+            temperature=0.1,
+        )
+        raw2 = (resp2.choices[0].message.content or "").strip()
+    except Exception:
+        raw2 = None
+
+    parsed2 = _parse_json_object(raw2) if raw2 else None
+    if parsed2 and parsed2.get("specs"):
+        parsed1["specs"] = parsed2["specs"]
+
+    return {
+        "ok": True,
+        "parsed": parsed1,
+        "raw_text": raw1,
+        "raw_text_2nd": raw2,
+        "page_indices": [p[0] for p in page_images],
+    }
+
+
+def run_drawing_validation(
+    *,
+    pdf_path: str,
+    maker_name: str,
+    model_name: str,
+    zoom: float = 2.0,
+) -> dict[str, Any]:
+    """도면 PDF 전용 검증.
+
+    - 전체 페이지를 고해상도 렌더링 (도면은 1~4페이지)
+    - GPT Vision 2-pass로 표제란 + 사양 표 추출
+    - drawing_no vs model_name 일치 여부 반환
+
+    Returns dict with keys:
+        ok, drawing_no, drawing_name, maker_in_titleblock,
+        drawing_no_matches_model, is_same_maker, specs, reason_ko,
+        raw_parsed, error?
+    """
+    try:
+        doc = fitz.open(pdf_path)
+        n_pages = doc.page_count
+        doc.close()
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+    indices = list(range(n_pages))
+    images = render_pdf_pages_png(pdf_path, indices, zoom=zoom)
+    if not images:
+        return {"ok": False, "error": "렌더링 실패"}
+
+    result = _gpt_vision_drawing(
+        maker_name=maker_name,
+        model_name=model_name,
+        page_images=images,
+    )
+    if not result.get("ok"):
+        return result
+
+    p = result.get("parsed") or {}
+    return {
+        "ok": True,
+        "drawing_no": p.get("drawing_no"),
+        "drawing_name": p.get("drawing_name"),
+        "maker_in_titleblock": p.get("maker_in_titleblock"),
+        "revision": p.get("revision"),
+        "scale": p.get("scale"),
+        "drawing_no_matches_model": p.get("drawing_no_matches_model"),
+        "is_same_maker": p.get("is_same_maker"),
+        "specs": p.get("specs") or [],
+        "reason_ko": p.get("reason_ko"),
+        "raw_parsed": p,
+        "page_indices": result.get("page_indices", []),
+    }

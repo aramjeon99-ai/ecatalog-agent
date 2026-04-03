@@ -14,7 +14,6 @@ QUOTE_HEADER_KEYWORDS = [
     "quote",
     "발주",
     "purchase order",
-    "proforma",
 ]
 
 # 사용자의 기준: 견적서는 "수량 + 금액"이 함께 기재된 경우.
