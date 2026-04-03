@@ -135,26 +135,31 @@ st.markdown("""
 [data-testid="stSidebar"] .stSuccess { background: #f0fdf4; border-left: 3px solid #00a651; }
 [data-testid="stSidebar"] .stError   { background: #fef2f2; border-left: 3px solid #cc0000; }
 
-/* ── 헤더 배너 ── */
+/* ── 헤더 배너 — 컨테이너 전체 너비로 확장 ── */
 .posco-header {
-    background: linear-gradient(135deg, #003087 60%, #0057b8 100%);
-    border-radius: 8px;
-    padding: 20px 32px 16px 32px;
-    margin-bottom: 18px;
+    background: linear-gradient(135deg, #003087 55%, #0057b8 100%);
+    border-radius: 10px;
+    padding: 28px 48px 24px 48px;
+    margin: -0.5rem -1rem 20px -1rem;   /* 좌우 마진 음수로 컨테이너 폭 초과 */
     display: flex;
     align-items: center;
-    gap: 16px;
-    box-shadow: 0 2px 8px rgba(0,48,135,0.18);
+    gap: 20px;
+    box-shadow: 0 3px 12px rgba(0,48,135,0.22);
+    min-height: 90px;
 }
-.posco-header .brand { font-size: 13px; font-weight: 700; color: #7bb3ff; letter-spacing: 2px; }
-.posco-header .title { font-size: 26px; font-weight: 800; color: #fff; margin: 0; }
-.posco-header .subtitle { font-size: 13px; color: #a8c8ff; margin-top: 2px; }
+.posco-header .brand {
+    font-size: 14px; font-weight: 700; color: #7bb3ff;
+    letter-spacing: 3px; text-transform: uppercase; margin-bottom: 4px;
+}
+.posco-header .title { font-size: 32px; font-weight: 800; color: #fff; margin: 0; line-height: 1.1; }
+.posco-header .subtitle { font-size: 14px; color: #a8c8ff; margin-top: 6px; }
 .posco-header .badge {
     margin-left: auto;
-    background: rgba(255,255,255,0.15);
-    border-radius: 20px;
-    padding: 6px 16px;
-    font-size: 12px; color: #fff;
+    background: rgba(255,255,255,0.18);
+    border: 1px solid rgba(255,255,255,0.3);
+    border-radius: 24px;
+    padding: 8px 20px;
+    font-size: 13px; color: #fff; white-space: nowrap;
 }
 
 /* ── 카드 ── */
