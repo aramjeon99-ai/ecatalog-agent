@@ -46,7 +46,34 @@ st.markdown("""
     background: linear-gradient(180deg, #003087 0%, #00205c 100%);
     border-right: none;
 }
-[data-testid="stSidebar"] * { color: #fff !important; }
+/* 기본 텍스트·헤더만 흰색 */
+[data-testid="stSidebar"] h1,
+[data-testid="stSidebar"] h2,
+[data-testid="stSidebar"] h3,
+[data-testid="stSidebar"] p,
+[data-testid="stSidebar"] span:not([data-testid]),
+[data-testid="stSidebar"] .stMarkdown { color: #fff !important; }
+[data-testid="stSidebar"] label { color: #cce0ff !important; }
+
+/* 파일 업로더 영역은 밝은 배경 + 검은 글자 */
+[data-testid="stSidebar"] [data-testid="stFileUploader"] {
+    background: rgba(255,255,255,0.92);
+    border-radius: 6px;
+    padding: 6px 8px;
+}
+[data-testid="stSidebar"] [data-testid="stFileUploader"] * { color: #1a1a1a !important; }
+[data-testid="stSidebar"] [data-testid="stFileUploader"] button {
+    background: #003087 !important;
+    color: #fff !important;
+    border: none !important;
+}
+
+/* 텍스트 입력 */
+[data-testid="stSidebar"] input[type="text"] {
+    background: rgba(255,255,255,0.15) !important;
+    color: #fff !important;
+    border: 1px solid rgba(255,255,255,0.3) !important;
+}
 [data-testid="stSidebar"] .stButton > button {
     background: #ff6b00;
     color: #fff !important;
@@ -56,14 +83,6 @@ st.markdown("""
     width: 100%;
 }
 [data-testid="stSidebar"] .stButton > button:hover { background: #e05c00; }
-[data-testid="stSidebar"] input,
-[data-testid="stSidebar"] select {
-    background: rgba(255,255,255,0.15) !important;
-    color: #fff !important;
-    border: 1px solid rgba(255,255,255,0.3) !important;
-}
-[data-testid="stSidebar"] label { color: #cce0ff !important; }
-[data-testid="stSidebar"] .stFileUploader { background: rgba(255,255,255,0.07); border-radius: 6px; padding: 4px 8px; }
 
 /* ── 헤더 배너 ── */
 .posco-header {
