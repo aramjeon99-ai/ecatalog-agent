@@ -41,48 +41,99 @@ st.markdown("""
 /* ── 최상단 헤더 바 ── */
 [data-testid="stAppViewContainer"] > .main > div:first-child { padding-top: 0 !important; }
 
-/* ── 사이드바 ── */
+/* ── 사이드바 — 흰 배경 + 네이비 타이틀 헤더 ── */
 [data-testid="stSidebar"] {
-    background: linear-gradient(180deg, #003087 0%, #00205c 100%);
-    border-right: none;
+    background: #f8fafc;
+    border-right: 2px solid #e2e8f0;
 }
-/* 기본 텍스트·헤더만 흰색 */
-[data-testid="stSidebar"] h1,
-[data-testid="stSidebar"] h2,
-[data-testid="stSidebar"] h3,
-[data-testid="stSidebar"] p,
-[data-testid="stSidebar"] span:not([data-testid]),
-[data-testid="stSidebar"] .stMarkdown { color: #fff !important; }
-[data-testid="stSidebar"] label { color: #cce0ff !important; }
 
-/* 파일 업로더 영역은 밝은 배경 + 검은 글자 */
-[data-testid="stSidebar"] [data-testid="stFileUploader"] {
-    background: rgba(255,255,255,0.92);
-    border-radius: 6px;
-    padding: 6px 8px;
+/* 사이드바 POSCO 타이틀 헤더 */
+.sidebar-header {
+    background: linear-gradient(135deg, #003087 0%, #0057b8 100%);
+    margin: -1rem -1rem 1rem -1rem;
+    padding: 18px 20px 14px 20px;
+    border-bottom: 3px solid #ff6b00;
 }
-[data-testid="stSidebar"] [data-testid="stFileUploader"] * { color: #1a1a1a !important; }
-[data-testid="stSidebar"] [data-testid="stFileUploader"] button {
-    background: #003087 !important;
-    color: #fff !important;
-    border: none !important;
+.sidebar-header .sb-brand {
+    font-size: 11px; font-weight: 700; color: #7bb3ff;
+    letter-spacing: 2px; text-transform: uppercase;
+}
+.sidebar-header .sb-title {
+    font-size: 18px; font-weight: 800; color: #fff; margin: 2px 0 0 0;
+}
+
+/* 사이드바 내 모든 텍스트 — 어두운 색 */
+[data-testid="stSidebar"] * { color: #1e293b !important; }
+
+/* 섹션 라벨 (①②③④) */
+[data-testid="stSidebar"] .stMarkdown p,
+[data-testid="stSidebar"] .stMarkdown strong {
+    color: #003087 !important;
+    font-weight: 600 !important;
+    font-size: 13px !important;
 }
 
 /* 텍스트 입력 */
 [data-testid="stSidebar"] input[type="text"] {
-    background: rgba(255,255,255,0.15) !important;
-    color: #fff !important;
-    border: 1px solid rgba(255,255,255,0.3) !important;
+    background: #fff !important;
+    color: #1e293b !important;
+    border: 1px solid #cbd5e1 !important;
+    border-radius: 6px !important;
 }
+[data-testid="stSidebar"] input[type="text"]:focus {
+    border-color: #003087 !important;
+    box-shadow: 0 0 0 2px rgba(0,48,135,0.12) !important;
+}
+
+/* 파일 업로더 */
+[data-testid="stSidebar"] [data-testid="stFileUploader"] {
+    background: #fff;
+    border-radius: 8px;
+    border: 1px solid #e2e8f0;
+    padding: 8px;
+}
+[data-testid="stSidebar"] [data-testid="stFileUploader"] * { color: #1e293b !important; }
+[data-testid="stSidebar"] [data-testid="stFileUploader"] button {
+    background: #003087 !important;
+    color: #fff !important;
+    border: none !important;
+    border-radius: 6px !important;
+    font-size: 13px !important;
+    padding: 6px 16px !important;
+}
+[data-testid="stSidebar"] [data-testid="stFileUploader"] button:hover {
+    background: #0057b8 !important;
+}
+
+/* 캡션/안내 텍스트 */
+[data-testid="stSidebar"] small,
+[data-testid="stSidebar"] .stCaption { color: #64748b !important; font-size: 12px !important; }
+
+/* 구분선 */
+[data-testid="stSidebar"] hr { border-color: #e2e8f0 !important; }
+
+/* 버튼 — 데이터 저장 / 재검증 / 새로고침 */
 [data-testid="stSidebar"] .stButton > button {
-    background: #ff6b00;
+    background: #003087 !important;
     color: #fff !important;
-    border: none;
-    border-radius: 4px;
-    font-weight: 600;
-    width: 100%;
+    border: none !important;
+    border-radius: 6px !important;
+    font-weight: 600 !important;
+    width: 100% !important;
+    padding: 8px 0 !important;
 }
-[data-testid="stSidebar"] .stButton > button:hover { background: #e05c00; }
+[data-testid="stSidebar"] .stButton > button:hover { background: #0057b8 !important; }
+/* 저장 버튼(primary)만 오렌지 */
+[data-testid="stSidebar"] .stButton > button[kind="primary"] {
+    background: #ff6b00 !important;
+}
+[data-testid="stSidebar"] .stButton > button[kind="primary"]:hover {
+    background: #e05c00 !important;
+}
+
+/* 성공/에러 알림 */
+[data-testid="stSidebar"] .stSuccess { background: #f0fdf4; border-left: 3px solid #00a651; }
+[data-testid="stSidebar"] .stError   { background: #fef2f2; border-left: 3px solid #cc0000; }
 
 /* ── 헤더 배너 ── */
 .posco-header {
@@ -231,7 +282,13 @@ config = load_app_config()
 data_loaded = config is not None
 
 with st.sidebar:
-    st.header("기준 데이터 등록")
+    st.markdown("""
+<div class="sidebar-header">
+  <div class="sb-brand">POSCO</div>
+  <div class="sb-title">MRO e-Catalog</div>
+</div>
+""", unsafe_allow_html=True)
+    st.markdown("#### 📂 기준 데이터 등록")
     st.caption("최초 1회 업로드 후 자동 로드됩니다.")
 
     pdf_base_dir_input = st.text_input(
