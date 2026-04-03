@@ -886,10 +886,12 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 mc1, mc2, mc3, mc4 = st.columns(4)
-mc1.metric("✅ 자동승인", cnt_map["APPROVED"])
-mc2.metric("❌ 자동회송", cnt_map["REJECTED"])
-mc3.metric("⏳ 사람승인", cnt_map["PENDING"])
-mc4.metric("⬜ 미검증", total - sum(cnt_map.values()))
+_pct = lambda n: f"{n/total*100:.1f}%" if total > 0 else "0%"
+_unverified = total - sum(cnt_map.values())
+mc1.metric("✅ 자동승인", cnt_map["APPROVED"], delta=_pct(cnt_map["APPROVED"]), delta_color="off")
+mc2.metric("❌ 자동회송", cnt_map["REJECTED"], delta=_pct(cnt_map["REJECTED"]), delta_color="off")
+mc3.metric("⏳ 사람승인", cnt_map["PENDING"],  delta=_pct(cnt_map["PENDING"]),  delta_color="off")
+mc4.metric("⬜ 미검증",   _unverified,          delta=_pct(_unverified),          delta_color="off")
 
 # 검색 필터
 search = st.text_input("🔍 Q코드 / 품명 / 제조사 / 모델명 검색", value="", placeholder="입력 시 필터링")
