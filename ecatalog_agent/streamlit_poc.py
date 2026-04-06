@@ -1081,10 +1081,12 @@ def run_qcode_validation(
             continue
         step_results.append(
             {
+                "step_name": sr.step_name,
                 "step": sr.step_name,
                 "status": sr.status,
                 "confidence": sr.confidence,
                 "flags": [f.code for f in sr.flags_raised],
+                "details": sr.details or {},
             }
         )
     step_results.append(

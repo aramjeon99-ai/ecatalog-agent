@@ -800,8 +800,26 @@ def show_validation_dialog(q_code: str) -> None:
         if active_rules:
             st.divider()
             st.markdown("**📋 회송 사유 및 재신청 안내:**")
+            # STEP5 중복 정보 조회
+            _step_results = result.get("step_results") or []
+            _dup_info: dict = {}
+            for _sr in _step_results:
+                if isinstance(_sr, dict) and _sr.get("step_name") == "STEP5":
+                    _dup_info = _sr.get("details") or {}
+                    break
             for rule in active_rules:
-                st.warning(f"**[{rule['id']}] {rule['category']}**\n\n{rule['message']}")
+                msg = f"**[{rule['id']}] {rule['category']}**\n\n{rule['message']}"
+                # R1_DUPLICATE이면 중복 Q코드 추가 표시
+                if rule.get("id") == "R1_DUPLICATE" and _dup_info.get("duplicate_request_id"):
+                    dup_qcode = _dup_info["duplicate_request_id"]
+                    dup_model = _dup_info.get("duplicate_model_name", "")
+                    dup_maker = _dup_info.get("duplicate_maker_name", "")
+                    msg += f"\n\n> 🔗 **기존 등록 코드: `{dup_qcode}`**"
+                    if dup_model:
+                        msg += f"  \n> 모델: `{dup_model}`"
+                    if dup_maker:
+                        msg += f" / 제조사: `{dup_maker}`"
+                st.warning(msg)
         else:
             st.markdown(f"- 사유: {result.get('summary', '')}")
 

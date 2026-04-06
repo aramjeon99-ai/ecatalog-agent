@@ -45,24 +45,37 @@ def step5_duplicate_check(
             confidence = 1.0
             details = {"item_hash": item_hash, "skip_reason": "no_catalog_data"}
         else:
-            cur.execute("SELECT request_id FROM processed_items WHERE item_hash = ?", (item_hash,))
+            cur.execute(
+                "SELECT request_id, model_name, maker_name FROM processed_items WHERE item_hash = ?",
+                (item_hash,),
+            )
             row = cur.fetchone()
 
             if row:
+                dup_request_id, dup_model, dup_maker = row[0], row[1], row[2]
                 flags.append(
                     ErrorFlag(
                         code="ERR_DUPLICATE_ITEM",
                         step="STEP5",
-                        message="동일한 모델·메이커 조합이 기준 데이터에 이미 등록되어 있습니다.",
-                        evidence=f"existing_request_id={row[0]}",
+                        message=(
+                            f"동일한 모델·메이커 조합이 기준 데이터에 이미 등록되어 있습니다. "
+                            f"(기존 코드: {dup_request_id})"
+                        ),
+                        evidence=f"existing_request_id={dup_request_id}, model={dup_model}, maker={dup_maker}",
                     )
                 )
                 status = "FAIL"
                 confidence = 0.99
+                details = {
+                    "item_hash": item_hash,
+                    "duplicate_request_id": dup_request_id,
+                    "duplicate_model_name": dup_model,
+                    "duplicate_maker_name": dup_maker,
+                }
             else:
                 status = "PASS"
                 confidence = 1.0
-            details = {"item_hash": item_hash}
+                details = {"item_hash": item_hash}
     finally:
         conn.close()
 
