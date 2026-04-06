@@ -479,15 +479,18 @@ statuses = _compute_statuses(
 # PDF 있는 Q코드만 목록에 표시
 qcodes_with_pdf = [q for q in qcode_list if statuses.get(q, (None, False))[1]]
 
-# ── 초반 사전 검증: 앞단 7개 미리 채우기 ─────────────────────────────
+# ── 초반 사전 검증: 앞단 7개 + 지정 Q코드 미리 채우기 ──────────────────
 # Streamlit은 위에서부터 계속 재실행되므로, session_state 플래그로 1회만 수행합니다.
 PRELOAD_COUNT = 7
+_PRELOAD_EXTRA = ["Q4669390"]  # 앞단 7개 외에 항상 사전 검증할 Q코드
 if not st.session_state.get("_preloaded_first7_done", False):
-    qcodes_to_preload = qcodes_with_pdf[:PRELOAD_COUNT]
+    _base = qcodes_with_pdf[:PRELOAD_COUNT]
+    _extra = [q for q in _PRELOAD_EXTRA if q in qcodes_with_pdf and q not in _base]
+    qcodes_to_preload = _base + _extra
     if qcodes_to_preload:
         st.session_state["_preloaded_first7_done"] = True
         st.sidebar.caption(f"초기 사전 검증 중… ({len(qcodes_to_preload)}개)")
-        with st.spinner("앞단 7개 Q코드 사전 검증 중..."):
+        with st.spinner(f"Q코드 사전 검증 중… ({len(qcodes_to_preload)}개)"):
             for q_code in qcodes_to_preload:
                 if q_code in st.session_state["validation_results"]:
                     continue
