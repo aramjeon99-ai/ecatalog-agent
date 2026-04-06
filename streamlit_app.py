@@ -691,17 +691,51 @@ def show_validation_dialog(q_code: str) -> None:
         v = (h.get("value") or "").strip()
         if t and v:
             online_map[t] = v
+
+    # 도면인 경우 SPEC BOX 추출값을 우선 사용
+    drawing_spec_map: dict[str, str] = {}
+    if judgment.get("is_drawing_document"):
+        _dr = judgment.get("drawing_validation_result") or {}
+        for _sp in (_dr.get("specs") or []):
+            _t = str(_sp.get("title") or "").strip().upper()
+            _v = str(_sp.get("value") or "").strip()
+            if _t and _v:
+                drawing_spec_map[_t] = _v
+
     for spec in expected_specs:
         title = spec.get("title", "")
         value = spec.get("value", "") or "(미입력)"
+        title_up = title.strip().upper()
+
+        # 1순위: 도면 SPEC BOX
+        if drawing_spec_map:
+            # 정확히 일치 or 부분 일치
+            drawing_val = drawing_spec_map.get(title_up)
+            if not drawing_val:
+                # 부분 일치 탐색
+                for k, v in drawing_spec_map.items():
+                    if title_up in k or k in title_up:
+                        drawing_val = v
+                        break
+            if drawing_val:
+                value_norm = _normalize(value)
+                dv_norm = _normalize(drawing_val)
+                match_st = "일치" if value_norm and value_norm in dv_norm else "불일치"
+                spec_pdf_vals.append({"title": title, "sys_value": value,
+                                      "pdf_value": drawing_val + " (도면)", "match": match_st})
+                continue
+
+        # 2순위: PDF 텍스트
         pdf_val, match_st = _extract_pdf_value(title, value, pdf_text)
-        # PDF에서 값이 안 잡히거나 불일치면 웹에서 긁어온 값으로 대체(가능할 때)
+
+        # 3순위: 웹
         if match_st != "일치" and title in online_map:
             web_val = online_map[title]
             value_norm = _normalize(value)
             web_val_norm = _normalize(web_val)
             pdf_val = web_val + " (웹)"
             match_st = "일치" if value_norm and value_norm in web_val_norm else "불일치"
+
         spec_pdf_vals.append({"title": title, "sys_value": value,
                                "pdf_value": pdf_val, "match": match_st})
 
