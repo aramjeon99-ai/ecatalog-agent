@@ -504,8 +504,11 @@ statuses = _compute_statuses(
     pdf_base_dir,
 )
 
-# PDF 있는 Q코드만 목록에 표시
-qcodes_with_pdf = [q for q in qcode_list if statuses.get(q, (None, False))[1]]
+# PDF 있거나 Q3(오류코드)인 Q코드는 모두 목록에 표시
+qcodes_with_pdf = [
+    q for q in qcode_list
+    if statuses.get(q, (None, False))[1] or is_known_error_code(q)
+]
 
 # ── 초반 사전 검증: 앞단 7개 + 지정 Q코드 미리 채우기 ──────────────────
 # Streamlit은 위에서부터 계속 재실행되므로, session_state 플래그로 1회만 수행합니다.
@@ -541,7 +544,14 @@ def show_validation_dialog(q_code: str) -> None:
     st.subheader(f"Q코드: {q_code}")
 
     if is_known_error_code(q_code):
-        st.info("ℹ️ Q3 코드 — 모델·메이커 불일치 이력이 있는 코드입니다. 검토 결과를 확인하세요.")
+        st.markdown("""
+<div style="background:#fff0f0;border:2px solid #d32f2f;border-radius:8px;padding:14px 18px;margin-bottom:12px;">
+<span style="font-size:17px;font-weight:800;color:#d32f2f;">⛔ Q3 오류 코드 — 자동승인 불가</span><br>
+<span style="font-size:13px;color:#b71c1c;font-weight:600;">ERR_KNOWN_ERROR_CODE</span><br>
+<span style="font-size:13px;color:#333;">Q3으로 시작하는 코드는 <b>모델·메이커 불일치 또는 잘못 등록된 자료 이력</b>이 있는 오류 코드입니다.<br>
+시스템 정책에 따라 검증 결과와 무관하게 <b>자동승인이 차단</b>됩니다. 담당자 확인 후 처리하세요.</span>
+</div>
+""", unsafe_allow_html=True)
 
     # 캐시된 결과 사용, 없으면 검증 실행
     if q_code not in st.session_state["validation_results"]:
@@ -865,7 +875,7 @@ def show_validation_dialog(q_code: str) -> None:
         else:
             st.markdown("- 사양 존재 여부: 모든 항목 확인됨")
 
-        if active_rules:
+        if active_rules or is_known_error_code(q_code):
             st.divider()
             st.markdown("**📋 회송 사유 및 재신청 안내:**")
             # STEP5 중복 정보 조회
@@ -875,6 +885,13 @@ def show_validation_dialog(q_code: str) -> None:
                 if isinstance(_sr, dict) and _sr.get("step_name") == "STEP5":
                     _dup_info = _sr.get("details") or {}
                     break
+            # Q3 오류코드 사유 항상 맨 위에 표시
+            if is_known_error_code(q_code):
+                st.error(
+                    "**[ERR_KNOWN_ERROR_CODE] Q3 오류 코드 — 자동승인 불가**\n\n"
+                    "Q3으로 시작하는 코드는 모델·메이커 불일치 또는 잘못 등록된 자료 이력이 있어 "
+                    "시스템 정책상 자동승인이 차단됩니다. 담당자가 직접 검토·처리해야 합니다."
+                )
             for rule in active_rules:
                 msg = f"**[{rule['id']}] {rule['category']}**\n\n{rule['message']}"
                 # R1_DUPLICATE이면 중복 Q코드 추가 표시
@@ -1066,8 +1083,11 @@ for row in summary_rows:
         status = _OUTCOME_TO_STATUS.get(outcome, "사람승인")
         c5.markdown(_STATUS_BADGE[status], unsafe_allow_html=True)
     else:
-        quick_status = statuses.get(q, ("사람승인", True))[0]
-        c5.markdown(_STATUS_BADGE_DIM[quick_status], unsafe_allow_html=True)
+        _qs_raw = statuses.get(q, ("사람승인", True))[0]
+        # "자동회송" → "시스템 회송" 으로 매핑 (Q3 오류코드 포함)
+        _qs_map = {"자동회송": "시스템 회송", "자동승인": "자동승인", "사람승인": "사람승인"}
+        quick_status = _qs_map.get(_qs_raw, _qs_raw)
+        c5.markdown(_STATUS_BADGE_DIM.get(quick_status, _STATUS_BADGE_DIM["시스템 회송"]), unsafe_allow_html=True)
 
     if c6.button("검증", key=f"btn_{q}", type="primary"):
         show_validation_dialog(q)
