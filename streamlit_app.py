@@ -122,10 +122,21 @@ st.markdown("""
     width: 100% !important;
     padding: 8px 0 !important;
 }
+[data-testid="stSidebar"] .stButton > button * {
+    color: #fff !important;
+}
+[data-testid="stSidebar"] .stButton > button p {
+    color: #fff !important;
+}
 [data-testid="stSidebar"] .stButton > button:hover { background: #0057b8 !important; }
+[data-testid="stSidebar"] .stButton > button:hover * { color: #fff !important; }
 /* 저장 버튼(primary)만 오렌지 */
 [data-testid="stSidebar"] .stButton > button[kind="primary"] {
     background: #ff6b00 !important;
+    color: #fff !important;
+}
+[data-testid="stSidebar"] .stButton > button[kind="primary"] * {
+    color: #fff !important;
 }
 [data-testid="stSidebar"] .stButton > button[kind="primary"]:hover {
     background: #e05c00 !important;
