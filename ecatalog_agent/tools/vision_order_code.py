@@ -516,17 +516,52 @@ def run_drawing_validation(
         return result
 
     p = result.get("parsed") or {}
+
+    # ── DWG NO 고정밀 추출: 우하단 크롭 + GPT 집중 호출로 보정 ──────────
+    try:
+        from ecatalog_agent.tools.dwg_no_extractor import extract_dwg_no
+        dwg_extraction = extract_dwg_no(
+            pdf_path,
+            model_name=model_name,
+            page_idx=0,
+        )
+    except Exception:
+        dwg_extraction = None
+
+    # GPT 2-pass 결과와 전용 추출기 결과 중 confidence가 높은 쪽 선택
+    gpt_dwg_no = p.get("drawing_no")
+    if dwg_extraction and dwg_extraction.get("dwg_no"):
+        ext_conf = dwg_extraction.get("confidence", 0.0)
+        # 전용 추출기 confidence >= 0.6 이면 우선 사용
+        final_dwg_no = dwg_extraction["dwg_no"] if ext_conf >= 0.6 else (gpt_dwg_no or dwg_extraction["dwg_no"])
+    else:
+        final_dwg_no = gpt_dwg_no
+        dwg_extraction = None
+
+    # drawing_no_matches_model 재판정
+    def _dwg_matches(dwg: str | None, model: str) -> bool | None:
+        if not dwg:
+            return None
+        import re as _re
+        def _n(s: str) -> str:
+            return _re.sub(r"[-_\s]", "", s.upper())
+        nd, nm = _n(dwg), _n(model)
+        return nd == nm or nd in nm or nm in nd
+
+    drawing_no_matches = _dwg_matches(final_dwg_no, model_name) if final_dwg_no else p.get("drawing_no_matches_model")
+
     return {
         "ok": True,
-        "drawing_no": p.get("drawing_no"),
+        "drawing_no": final_dwg_no,
         "drawing_name": p.get("drawing_name"),
         "maker_in_titleblock": p.get("maker_in_titleblock"),
         "revision": p.get("revision"),
         "scale": p.get("scale"),
-        "drawing_no_matches_model": p.get("drawing_no_matches_model"),
+        "drawing_no_matches_model": drawing_no_matches,
         "is_same_maker": p.get("is_same_maker"),
         "specs": p.get("specs") or [],
         "reason_ko": p.get("reason_ko"),
         "raw_parsed": p,
+        "dwg_extraction": dwg_extraction,
         "page_indices": result.get("page_indices", []),
     }
