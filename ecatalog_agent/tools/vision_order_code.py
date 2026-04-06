@@ -477,6 +477,27 @@ def _gpt_vision_drawing(
     }
 
 
+def _merge_spec_box_into_result(result: dict, pdf_path: str) -> dict:
+    """전용 SPEC BOX 추출기 결과를 drawing validation 결과에 병합한다."""
+    try:
+        from ecatalog_agent.tools.spec_box_extractor import extract_spec_box
+        sb = extract_spec_box(pdf_path)
+        if sb.get("ok") and sb.get("fields"):
+            # spec_box_extractor 결과를 specs 형식으로 변환
+            new_specs = [
+                {"title": f["name"], "value": f["value"]}
+                for f in sb["fields"]
+                if f.get("confidence", 0) >= 0.5
+            ]
+            if new_specs:
+                result["specs"] = new_specs
+            result["spec_box_title"] = sb.get("spec_box_title")
+            result["spec_box_extraction"] = sb
+    except Exception:
+        pass
+    return result
+
+
 def run_drawing_validation(
     *,
     pdf_path: str,
@@ -550,7 +571,7 @@ def run_drawing_validation(
 
     drawing_no_matches = _dwg_matches(final_dwg_no, model_name) if final_dwg_no else p.get("drawing_no_matches_model")
 
-    return {
+    out = {
         "ok": True,
         "drawing_no": final_dwg_no,
         "drawing_name": p.get("drawing_name"),
@@ -565,3 +586,6 @@ def run_drawing_validation(
         "dwg_extraction": dwg_extraction,
         "page_indices": result.get("page_indices", []),
     }
+    # 전용 SPEC BOX 추출기로 specs 보완
+    out = _merge_spec_box_into_result(out, pdf_path)
+    return out
