@@ -223,19 +223,28 @@ def gpt_vision_order_code_and_maker(
             }
         )
 
-    try:
-        resp = client.chat.completions.create(
-            model=model_id,
-            messages=[
-                {"role": "system", "content": _SYSTEM_PROMPT},
-                {"role": "user", "content": content},
-            ],
-            max_tokens=1200,
-            temperature=0.2,
-        )
-        raw_text = (resp.choices[0].message.content or "").strip()
-    except Exception as e:
-        return {"ok": False, "error": str(e)}
+    _FALLBACK = "gpt-4o-mini"
+    raw_text = None
+    for _mid in [model_id, _FALLBACK]:
+        try:
+            resp = client.chat.completions.create(
+                model=_mid,
+                messages=[
+                    {"role": "system", "content": _SYSTEM_PROMPT},
+                    {"role": "user", "content": content},
+                ],
+                max_tokens=1200,
+                temperature=0.2,
+            )
+            raw_text = (resp.choices[0].message.content or "").strip()
+            break
+        except Exception as e:
+            err_str = str(e)
+            if "403" in err_str or "model_not_found" in err_str or "model" in err_str.lower():
+                continue
+            return {"ok": False, "error": err_str}
+    if raw_text is None:
+        return {"ok": False, "error": f"Vision 모델 접근 실패 ({model_id})"}
 
     parsed = _parse_json_object(raw_text)
     if not parsed:
@@ -394,19 +403,29 @@ def _gpt_vision_drawing(
     content_1: list[dict] = [{"type": "text", "text": prompt_1}]
     content_1.extend(_build_image_content(page_images))
 
-    try:
-        resp1 = client.chat.completions.create(
-            model=model_id,
-            messages=[
-                {"role": "system", "content": _DRAWING_SYSTEM_PROMPT},
-                {"role": "user", "content": content_1},
-            ],
-            max_tokens=1500,
-            temperature=0.1,
-        )
-        raw1 = (resp1.choices[0].message.content or "").strip()
-    except Exception as e:
-        return {"ok": False, "error": str(e)}
+    _FALLBACK = "gpt-4o-mini"
+    raw1 = None
+    for _mid in [model_id, _FALLBACK]:
+        try:
+            resp1 = client.chat.completions.create(
+                model=_mid,
+                messages=[
+                    {"role": "system", "content": _DRAWING_SYSTEM_PROMPT},
+                    {"role": "user", "content": content_1},
+                ],
+                max_tokens=1500,
+                temperature=0.1,
+            )
+            raw1 = (resp1.choices[0].message.content or "").strip()
+            model_id = _mid  # 2차 호출도 같은 모델 사용
+            break
+        except Exception as e:
+            err_str = str(e)
+            if "403" in err_str or "model_not_found" in err_str or "model" in err_str.lower():
+                continue
+            return {"ok": False, "error": err_str}
+    if raw1 is None:
+        return {"ok": False, "error": f"도면 Vision 모델 접근 실패 ({model_id}, {_FALLBACK})"}
 
     parsed1 = _parse_json_object(raw1)
     if not parsed1:
