@@ -940,6 +940,29 @@ def run_qcode_validation(
         except Exception:
             web_result = None
 
+    # ── URL 크롤링 사양 비교 (시스템 데이터 URL이 있는 경우) ─────────────────
+    url_spec_result: dict[str, Any] | None = None
+    if ctx.url_value and _api_key:
+        try:
+            from ecatalog_agent.tools.url_spec_fetcher import fetch_url_and_compare_specs
+            url_spec_result = fetch_url_and_compare_specs(
+                url=ctx.url_value,
+                maker_name=(ctx.maker_name or ""),
+                model_name=(ctx.model_name or ""),
+                expected_specs=ctx.expected_specs,
+            )
+            # URL에서 모델 확인 → 불일치 해소
+            if url_spec_result.get("ok") and url_spec_result.get("url_type") != "SKIPPED":
+                if url_spec_result.get("model_found") is True and not model_matched:
+                    model_matched = True
+                    model_pdf_val = f"URL 확인: {ctx.url_value}"
+                    state.error_flags = [f for f in state.error_flags if f.code != "ERR_MODEL_MISMATCH"]
+                if url_spec_result.get("maker_confirmed") is True and not pdf_maker_verified:
+                    pdf_maker_verified = True
+                    state.error_flags = [f for f in state.error_flags if f.code not in ("ERR_NO_LOGO", "ERR_PDF_MAKER_SOURCE")]
+        except Exception as _e:
+            url_spec_result = {"ok": False, "error": str(_e)}
+
     # ── 최종 강제 회송 vs STEP6 재평가 (UI 모델·메이커 일치와 outcome 일치화) ──
     from ecatalog_agent.steps.step6_decision import step6_final_decision
 
@@ -1097,6 +1120,7 @@ def run_qcode_validation(
         "vision_order_code_result": vision_result,
         "drawing_validation_result": drawing_result,
         "is_drawing_document": _is_drawing,
+        "url_spec_result": url_spec_result,
         "pdf_maker_verified": pdf_maker_verified,
         "maker_in_pdf_text": maker_in_pdf,
         "spec_hints_vision": (

@@ -55,11 +55,11 @@ st.markdown("""
     border-bottom: 3px solid #ff6b00;
 }
 .sidebar-header .sb-brand {
-    font-size: 11px; font-weight: 700; color: #7bb3ff;
+    font-size: 13.2px; font-weight: 700; color: #7bb3ff;
     letter-spacing: 2px; text-transform: uppercase;
 }
 .sidebar-header .sb-title {
-    font-size: 18px; font-weight: 800; color: #fff; margin: 2px 0 0 0;
+    font-size: 21.6px; font-weight: 800; color: #fff; margin: 2px 0 0 0;
 }
 
 /* 사이드바 내 모든 텍스트 — 어두운 색 */
@@ -139,20 +139,20 @@ st.markdown("""
 .posco-header {
     background: linear-gradient(135deg, #003087 55%, #0057b8 100%);
     border-radius: 10px;
-    padding: 28px 48px 24px 48px;
+    padding: 34px 48px 29px 48px;
     margin: -0.5rem -1rem 20px -1rem;   /* 좌우 마진 음수로 컨테이너 폭 초과 */
     display: flex;
     align-items: center;
     gap: 20px;
     box-shadow: 0 3px 12px rgba(0,48,135,0.22);
-    min-height: 90px;
+    min-height: 108px;
 }
 .posco-header .brand {
-    font-size: 14px; font-weight: 700; color: #7bb3ff;
+    font-size: 14px; font-weight: 700; color: #fff;
     letter-spacing: 3px; text-transform: uppercase; margin-bottom: 4px;
 }
 .posco-header .title { font-size: 32px; font-weight: 800; color: #fff; margin: 0; line-height: 1.1; }
-.posco-header .subtitle { font-size: 14px; color: #a8c8ff; margin-top: 6px; }
+.posco-header .subtitle { font-size: 14px; color: #fff; margin-top: 6px; opacity: 0.85; }
 .posco-header .badge {
     margin-left: auto;
     background: rgba(255,255,255,0.18);
@@ -618,6 +618,37 @@ def show_validation_dialog(q_code: str) -> None:
                     st.warning(drawing_r.get("error", "도면 Vision 호출 실패"))
                 else:
                     st.caption("도면 감지됨 — OPENAI_API_KEY 설정 시 Vision 검증 가능")
+
+        url_spec_r = judgment.get("url_spec_result")
+        if url_spec_r and url_spec_r.get("url_type") != "SKIPPED":
+            with st.expander(
+                f"🌐 URL 사양 비교 ({url_spec_r.get('url_type', '')} · {url_spec_r.get('overall_match', 'UNKNOWN')})",
+                expanded=(url_spec_r.get("overall_match") in ("MISMATCH", "PARTIAL")),
+            ):
+                if url_spec_r.get("ok"):
+                    col_a, col_b = st.columns(2)
+                    match_color = {"MATCH": "✅", "PARTIAL": "⚠️", "MISMATCH": "❌", "UNKNOWN": "—"}
+                    col_a.metric("URL 사양 비교", match_color.get(url_spec_r.get("overall_match", ""), "—") + " " + (url_spec_r.get("overall_match") or ""))
+                    col_b.metric("신뢰도", f"{url_spec_r.get('confidence', 0.0):.0%}")
+                    st.caption(url_spec_r.get("reason_ko") or "")
+                    st.caption(f"URL: {url_spec_r.get('url', '')}")
+
+                    summary = url_spec_r.get("spec_match_summary") or []
+                    if summary:
+                        st.markdown("**사양 항목별 비교:**")
+                        for item in summary:
+                            icon = {"OK": "✅", "MISMATCH": "❌", "NOT_FOUND": "⚪"}.get(item.get("match", ""), "—")
+                            st.markdown(
+                                f"{icon} **{item.get('title','')}** — "
+                                f"기대: `{item.get('expected','')}` / "
+                                f"URL: `{item.get('actual') or '미확인'}`"
+                            )
+                    ext_specs = url_spec_r.get("extracted_specs") or []
+                    if ext_specs:
+                        st.markdown("**URL에서 추출된 사양:**")
+                        st.dataframe(pd.DataFrame(ext_specs), use_container_width=True, hide_index=True)
+                else:
+                    st.warning(f"URL 사양 조회 실패: {url_spec_r.get('error', '알 수 없음')}")
 
         vision_r = judgment.get("vision_order_code_result")
         if vision_r:
