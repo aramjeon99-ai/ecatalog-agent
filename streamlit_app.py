@@ -414,6 +414,22 @@ def _normalize(s: str) -> str:
     return re.sub(r"[^a-z0-9가-힣]", "", s.lower())
 
 
+def _compare_spec(sys_val: str, pdf_val: str) -> dict:
+    """단위 변환을 포함한 사양값 비교. 단순 문자열 → 수치+단위변환 순으로 시도."""
+    try:
+        from ecatalog_agent.utils.unit_converter import compare_spec_values
+        return compare_spec_values(sys_val, pdf_val)
+    except Exception:
+        # 폴백: 문자열 정규화 비교
+        sn = _normalize(sys_val)
+        pn = _normalize(pdf_val)
+        if sn and sn == pn:
+            return {"match": "일치", "note": "문자열 일치"}
+        if sn and (sn in pn or pn in sn):
+            return {"match": "일치", "note": "부분 일치"}
+        return {"match": "불일치", "note": ""}
+
+
 def _extract_pdf_value(title: str, sys_value: str, pdf_text: str) -> tuple[str, str]:
     if not pdf_text:
         return "없음", "없음"
@@ -449,7 +465,7 @@ def _compare_maker(sys_maker: str, best_matched: str | None, score: float) -> tu
 
 
 def _color_match(val: str) -> str:
-    if val == "일치":
+    if val in ("일치", "단위변환일치", "범위내"):
         return "background-color: #d4edda; color: #155724"
     if val in ("불일치", "없음"):
         return "background-color: #f8d7da; color: #721c24"
@@ -709,32 +725,38 @@ def show_validation_dialog(q_code: str) -> None:
 
         # 1순위: 도면 SPEC BOX
         if drawing_spec_map:
-            # 정확히 일치 or 부분 일치
             drawing_val = drawing_spec_map.get(title_up)
             if not drawing_val:
-                # 부분 일치 탐색
                 for k, v in drawing_spec_map.items():
                     if title_up in k or k in title_up:
                         drawing_val = v
                         break
             if drawing_val:
-                value_norm = _normalize(value)
-                dv_norm = _normalize(drawing_val)
-                match_st = "일치" if value_norm and value_norm in dv_norm else "불일치"
+                cmp = _compare_spec(value, drawing_val)
+                match_st = cmp["match"]
+                note = cmp.get("note", "")
+                display = drawing_val + " (도면)"
+                if match_st == "단위변환일치":
+                    display += f"  ≈ {note}"
+                elif match_st == "범위내":
+                    display += " [범위내]"
                 spec_pdf_vals.append({"title": title, "sys_value": value,
-                                      "pdf_value": drawing_val + " (도면)", "match": match_st})
+                                      "pdf_value": display, "match": match_st})
                 continue
 
         # 2순위: PDF 텍스트
         pdf_val, match_st = _extract_pdf_value(title, value, pdf_text)
+        if match_st == "불일치":
+            cmp = _compare_spec(value, pdf_val)
+            if cmp["match"] in ("일치", "단위변환일치", "범위내"):
+                match_st = cmp["match"]
 
         # 3순위: 웹
-        if match_st != "일치" and title in online_map:
+        if match_st not in ("일치", "단위변환일치", "범위내") and title in online_map:
             web_val = online_map[title]
-            value_norm = _normalize(value)
-            web_val_norm = _normalize(web_val)
+            cmp = _compare_spec(value, web_val)
             pdf_val = web_val + " (웹)"
-            match_st = "일치" if value_norm and value_norm in web_val_norm else "불일치"
+            match_st = cmp["match"] if cmp["match"] in ("일치", "단위변환일치", "범위내") else "불일치"
 
         spec_pdf_vals.append({"title": title, "sys_value": value,
                                "pdf_value": pdf_val, "match": match_st})
