@@ -9,12 +9,33 @@ GPT 비전으로 모델 조합 가능 여부·동일 제조사 자료 여부를 
 from __future__ import annotations
 
 import base64
+import io
 import json
 import os
 import re
 from typing import Any
 
 import fitz  # PyMuPDF
+
+# ── 선택적 의존성 (없어도 기본 동작) ────────────────────────────────────────
+try:
+    import cv2 as _cv2
+    import numpy as _np
+    _CV2_AVAILABLE = True
+except ImportError:
+    _CV2_AVAILABLE = False
+
+try:
+    from PIL import Image as _PILImage
+    _PIL_AVAILABLE = True
+except ImportError:
+    _PIL_AVAILABLE = False
+
+try:
+    from pyzbar.pyzbar import decode as _pyzbar_decode
+    _PYZBAR_AVAILABLE = True
+except ImportError:
+    _PYZBAR_AVAILABLE = False
 
 # 형번·형식 표가 있을 가능성이 높은 키워드 (페이지 스코어링)
 _ORDER_CODE_PAGE_KEYWORDS = (
@@ -167,15 +188,90 @@ def _parse_json_object(raw: str) -> dict[str, Any] | None:
         return None
 
 
+def crop_logo_region(
+    png_bytes: bytes,
+    *,
+    w_frac: float = 0.38,
+    h_frac: float = 0.22,
+) -> bytes | None:
+    """PIL로 좌상단 로고 영역을 크롭한 PNG 반환.
+
+    w_frac, h_frac: 전체 이미지 대비 잘라낼 비율 (너비 38%, 높이 22%).
+    """
+    if not _PIL_AVAILABLE:
+        return None
+    try:
+        img = _PILImage.open(io.BytesIO(png_bytes)).convert("RGB")
+        w, h = img.size
+        region = img.crop((0, 0, int(w * w_frac), int(h * h_frac)))
+        buf = io.BytesIO()
+        region.save(buf, format="PNG")
+        return buf.getvalue()
+    except Exception:
+        return None
+
+
+def detect_blue_in_top_left(
+    png_bytes: bytes,
+    *,
+    w_frac: float = 0.38,
+    h_frac: float = 0.22,
+    min_ratio: float = 0.008,
+) -> bool:
+    """cv2 HSV로 좌상단 영역에서 파란색(효성 브랜드 블루) 픽셀 비율을 확인.
+
+    효성 파란 로고 계열: HSV H ≈ 200–245° → cv2 스케일 100–122.
+    min_ratio: 파란 픽셀이 영역 전체의 이 비율 이상이어야 True.
+    """
+    if not _CV2_AVAILABLE or not _PIL_AVAILABLE:
+        return False
+    try:
+        img = _PILImage.open(io.BytesIO(png_bytes)).convert("RGB")
+        w, h = img.size
+        region = img.crop((0, 0, int(w * w_frac), int(h * h_frac)))
+        arr = _np.array(region, dtype=_np.uint8)
+        bgr = _cv2.cvtColor(arr, _cv2.COLOR_RGB2BGR)
+        hsv = _cv2.cvtColor(bgr, _cv2.COLOR_BGR2HSV)
+        # 파란색 HSV 범위 (두 범위를 OR로 처리)
+        mask = _cv2.inRange(hsv, _np.array([100, 70, 70]), _np.array([130, 255, 255]))
+        ratio = float(mask.sum()) / (255.0 * mask.size)
+        return ratio >= min_ratio
+    except Exception:
+        return False
+
+
+def scan_barcodes_from_png(png_bytes: bytes) -> list[str]:
+    """pyzbar로 이미지에서 바코드·QR코드 텍스트를 추출.
+
+    형번·품번이 바코드로 인쇄된 카탈로그에서 텍스트 레이어 없이도 코드 확보 가능.
+    """
+    if not _PYZBAR_AVAILABLE or not _PIL_AVAILABLE:
+        return []
+    try:
+        img = _PILImage.open(io.BytesIO(png_bytes))
+        decoded = _pyzbar_decode(img)
+        return [d.data.decode("utf-8", errors="ignore") for d in decoded if d.data]
+    except Exception:
+        return []
+
+
 def gpt_vision_order_code_and_maker(
     *,
     maker_name: str,
     model_name: str,
     page_images: list[tuple[int, bytes]],
+    maker_logo_hint: str | None = None,
+    logo_region_png: bytes | None = None,
+    barcode_texts: list[str] | None = None,
+    blue_detected: bool = False,
     model: str | None = None,
 ) -> dict[str, Any]:
     """
     GPT 비전에 형번 후보 페이지 + (가능하면) 표지 쪽 이미지를 넣고 판별.
+
+    logo_region_png: PIL로 크롭한 좌상단 로고 영역 (있으면 첫 이미지로 첨부)
+    barcode_texts:   pyzbar로 추출한 바코드 텍스트 목록
+    blue_detected:   cv2로 감지한 좌상단 파란색 존재 여부
 
     Returns:
         dict with keys: ok, error?, parsed?, raw_text?, page_indices?
@@ -197,6 +293,26 @@ def gpt_vision_order_code_and_maker(
         f"시스템 모델명(주문 코드): {model_name or '(없음)'}",
         "",
         "이미지는 동일 PDF에서 뽑은 페이지입니다. 일부는 형번·형식 표가 있을 것으로 선정했습니다.",
+        "메이커 로고/회사명 텍스트는 표지·좌상단·좌하단·우상단 영역까지 넓게 확인하세요.",
+    ]
+
+    # cv2 파란색 감지 결과를 힌트로 추가
+    if blue_detected:
+        user_lines.extend([
+            "",
+            "[cv2 분석] 첫 페이지 좌상단 영역에서 파란색 픽셀이 감지되었습니다."
+            " 이 영역의 파란 로고가 제조사 확인의 근거가 될 수 있습니다.",
+        ])
+
+    # pyzbar 바코드 결과를 힌트로 추가
+    if barcode_texts:
+        user_lines.extend([
+            "",
+            f"[바코드 스캔] 이미지에서 다음 코드가 감지되었습니다: {', '.join(barcode_texts[:10])}",
+            " 이 코드가 모델명·형번과 일치하는지 확인하세요.",
+        ])
+
+    user_lines.extend([
         "",
         "다음을 판단하여 JSON 한 개만 출력하세요:",
         "1) 이 자료가 위에 적은 제조사(또는 그 브랜드/계열사)에서 발행한 카탈로그·데이터시트로 보이는지.",
@@ -210,10 +326,26 @@ def gpt_vision_order_code_and_maker(
         ' "visible_brand_or_company": string|null,',
         ' "spec_hints": [{"title": string, "value": string}],',
         ' "reason_ko": string}',
-    ]
+    ])
+    if maker_logo_hint and str(maker_logo_hint).strip():
+        user_lines.extend(
+            [
+                "",
+                f"제조사 확인 추가 힌트: {str(maker_logo_hint).strip()}",
+            ]
+        )
     user_text = "\n".join(user_lines)
 
     content: list[dict[str, Any]] = [{"type": "text", "text": user_text}]
+
+    # 로고 크롭 이미지를 첫 번째로 첨부 (GPT가 로고 영역에 집중하도록)
+    if logo_region_png:
+        content.append({"type": "text", "text": "[좌상단 로고 영역 크롭 — 제조사 확인 우선 확인]"})
+        content.append({
+            "type": "image_url",
+            "image_url": {"url": _png_to_data_url(logo_region_png), "detail": "high"},
+        })
+
     for idx, (_, png) in enumerate(page_images):
         content.append({"type": "text", "text": f"[페이지 이미지 {idx + 1}]"})
         content.append(
@@ -267,6 +399,7 @@ def run_pdf_vision_validation(
     include_first_page: bool = True,
     max_order_code_pages: int = 3,
     extra_order_code_keywords: tuple[str, ...] | list[str] | None = None,
+    maker_logo_hint: str | None = None,
 ) -> dict[str, Any]:
     """
     1) 0페이지(표지·브랜드) + 형번 후보 페이지를 렌더링
@@ -299,12 +432,33 @@ def run_pdf_vision_validation(
     if not images:
         return {"ok": False, "error": "렌더링된 이미지가 없습니다."}
 
+    # ── PIL: 표지(첫 페이지) 좌상단 로고 영역 크롭 ─────────────────────────
+    first_png = images[0][1] if images else None
+    logo_region_png = crop_logo_region(first_png) if first_png else None
+
+    # ── cv2: 좌상단 파란색 감지 (효성 브랜드 블루 등) ─────────────────────
+    blue_detected = detect_blue_in_top_left(first_png) if first_png else False
+
+    # ── pyzbar: 전체 페이지 바코드·QR 스캔 ────────────────────────────────
+    barcode_texts: list[str] = []
+    for _, png in images:
+        found = scan_barcodes_from_png(png)
+        for code in found:
+            if code and code not in barcode_texts:
+                barcode_texts.append(code)
+
     vision = gpt_vision_order_code_and_maker(
         maker_name=maker_name,
         model_name=model_name,
         page_images=images,
+        maker_logo_hint=maker_logo_hint,
+        logo_region_png=logo_region_png,
+        barcode_texts=barcode_texts or None,
+        blue_detected=blue_detected,
     )
     vision["selected_page_indices"] = indices
+    vision["blue_detected_top_left"] = blue_detected
+    vision["barcode_texts"] = barcode_texts
     return vision
 
 
@@ -571,15 +725,57 @@ def run_drawing_validation(
 
     drawing_no_matches = _dwg_matches(final_dwg_no, model_name) if final_dwg_no else p.get("drawing_no_matches_model")
 
+    # ── 메이커명 전용 2-pass 추출: 표제란 우하단 크롭 집중 분석 ─────────
+    try:
+        from ecatalog_agent.tools.dwg_no_extractor import extract_maker_from_titleblock
+        maker_extraction = extract_maker_from_titleblock(
+            pdf_path,
+            known_maker=maker_name,
+            page_idx=0,
+        )
+    except Exception:
+        maker_extraction = None
+
+    # GPT 2-pass 결과와 전용 추출기 결과 중 확실한 쪽 선택
+    gpt_maker = p.get("maker_in_titleblock")
+    final_maker_in_titleblock = gpt_maker  # 기본값
+
+    if maker_extraction and maker_extraction.get("company_name"):
+        ext_maker_conf = maker_extraction.get("confidence", 0.0)
+        ext_company = maker_extraction["company_name"]
+        # 전용 추출기 신뢰도 >= 0.5 이면 우선 사용 (로고 텍스트 포함)
+        if ext_maker_conf >= 0.5:
+            logo_txt = maker_extraction.get("logo_text") or ""
+            final_maker_in_titleblock = ext_company
+            if logo_txt and logo_txt.lower() != ext_company.lower():
+                final_maker_in_titleblock = f"{ext_company} ({logo_txt})"
+        elif not gpt_maker:
+            # GPT 2-pass에서도 못 찾았으면 낮은 신뢰도라도 사용
+            final_maker_in_titleblock = ext_company
+
+    # is_same_maker 재판정 (전용 추출기 결과로 보정)
+    def _maker_matches(extracted: str | None, registered: str) -> bool | None:
+        if not extracted or not registered:
+            return None
+        def _n(s: str) -> str:
+            return re.sub(r"[^a-z0-9]", "", s.lower())
+        ne, nr = _n(extracted), _n(registered)
+        return ne == nr or ne in nr or nr in ne
+
+    is_same_maker_final = p.get("is_same_maker")
+    if final_maker_in_titleblock and is_same_maker_final is None:
+        is_same_maker_final = _maker_matches(final_maker_in_titleblock, maker_name)
+
     out = {
         "ok": True,
         "drawing_no": final_dwg_no,
         "drawing_name": p.get("drawing_name"),
-        "maker_in_titleblock": p.get("maker_in_titleblock"),
+        "maker_in_titleblock": final_maker_in_titleblock,
+        "maker_extraction": maker_extraction,
         "revision": p.get("revision"),
         "scale": p.get("scale"),
         "drawing_no_matches_model": drawing_no_matches,
-        "is_same_maker": p.get("is_same_maker"),
+        "is_same_maker": is_same_maker_final,
         "specs": p.get("specs") or [],
         "reason_ko": p.get("reason_ko"),
         "raw_parsed": p,

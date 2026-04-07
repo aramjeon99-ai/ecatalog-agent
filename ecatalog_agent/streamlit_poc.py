@@ -430,8 +430,9 @@ def get_qcode_context(
 
 
 def is_known_error_code(q_code: str) -> bool:
-    """Q3으로 시작하는 Q코드는 오류 케이스 (모델·메이커 불일치, 잘못 등록된 자료)."""
-    return str(q_code).strip().upper().startswith("Q3")
+    """현재는 사전 오류코드 차단을 사용하지 않는다."""
+    # 요청사항: Q3 코드도 사전 차단 없이 일반 검증 플로우를 동일하게 수행
+    return False
 
 
 def quick_status_check(
@@ -755,16 +756,18 @@ def run_qcode_validation(
         for x in ((maker_profile or {}).get("extra_order_code_page_keywords") or [])
         if str(x).strip()
     )
+    _maker_logo_hint = str((maker_profile or {}).get("vision_logo_hint_ko") or "").strip()
+    _vision_maker_check_attempts = max(1, int((maker_profile or {}).get("vision_maker_check_attempts") or 1))
     _prefer_vision = bool((maker_profile or {}).get("prefer_vision_for_order_code"))
     _always_vision = bool((maker_profile or {}).get("always_run_vision_with_api"))
 
     # ── 도면 형식 감지 → 도면 전용 Vision 2-pass ─────────────────────
     from ecatalog_agent.tools.vision_order_code import is_drawing_document, run_drawing_validation
 
+    # 도면 여부 판단은 API 키 없이도 수행 (무료 텍스트/파일명 기반)
     _is_drawing = bool(
         ctx.pdf_path
         and ctx.pdf_exists
-        and _api_key
         and is_drawing_document(
             str(ctx.pdf_path),
             ctx.pdf_text_sample or "",
@@ -772,14 +775,47 @@ def run_qcode_validation(
         )
     )
     if _is_drawing:
-        try:
-            drawing_result = run_drawing_validation(
-                pdf_path=str(ctx.pdf_path),
-                maker_name=(ctx.maker_name or "").strip(),
-                model_name=(ctx.model_name or "").strip(),
-            )
-        except Exception as e:
-            drawing_result = {"ok": False, "error": str(e)}
+        if _api_key:
+            try:
+                drawing_result = run_drawing_validation(
+                    pdf_path=str(ctx.pdf_path),
+                    maker_name=(ctx.maker_name or "").strip(),
+                    model_name=(ctx.model_name or "").strip(),
+                )
+            except Exception as e:
+                drawing_result = {"ok": False, "error": str(e)}
+        else:
+            # API 키 없음 → PyMuPDF 텍스트 크롭으로 표제란 메이커명 탐색
+            try:
+                import fitz as _fitz
+                import re as _re
+                _doc = _fitz.open(str(ctx.pdf_path))
+                _page = _doc.load_page(0)
+                _rect = _page.rect
+                _w, _h = _rect.width, _rect.height
+                # 전체 하단 40% + 좌우 전체
+                _clip = _fitz.Rect(_rect.x0, _rect.y0 + _h * 0.60, _rect.x1, _rect.y1)
+                _tb_text = _page.get_text("text", clip=_clip) or ""
+                _doc.close()
+                # 등록 메이커 + extra_aliases 탐색
+                _search_targets = [ctx.maker_name or ""] + list(_extra_maker_tokens)
+                _tb_lower = _tb_text.lower()
+                _found_in_tb = any(
+                    (normalize_maker(t) or t.lower()) in _tb_lower
+                    for t in _search_targets if t.strip()
+                )
+                if _found_in_tb:
+                    drawing_result = {
+                        "ok": True,
+                        "maker_in_titleblock": ctx.maker_name,
+                        "is_same_maker": True,
+                        "drawing_no": None,
+                        "drawing_no_matches_model": None,
+                        "specs": [],
+                        "reason_ko": "표제란 텍스트에서 제조사명 감지(API 키 없음, PyMuPDF 크롭)",
+                    }
+            except Exception:
+                pass
 
     if drawing_result and drawing_result.get("ok"):
         # DRAWING NO. → 모델 일치 확인
@@ -795,10 +831,25 @@ def run_qcode_validation(
             model_matched = False
 
         # 표제란 제조사 → 메이커 확인
-        if drawing_result.get("is_same_maker") is True:
+        # is_same_maker 명시값 우선, 없으면 maker_in_titleblock 텍스트로 직접 판정
+        _is_same = drawing_result.get("is_same_maker")
+        _titleblock_maker = (drawing_result.get("maker_in_titleblock") or "").strip()
+        if _is_same is None and _titleblock_maker and ctx.maker_name:
+            # 표제란에서 읽은 회사명이 등록 제조사와 매칭되는지 직접 비교
+            _nm = normalize_maker(ctx.maker_name) or ctx.maker_name.lower()
+            _nt = _titleblock_maker.lower()
+            _is_same = bool(_nm and (_nm in _nt or _nt.replace(" ", "").startswith(_nm[:4])))
+            # 한글 메이커명의 경우 extra_aliases(영문 표기)로도 비교
+            if not _is_same and _extra_maker_tokens:
+                for _alias in _extra_maker_tokens:
+                    _na = normalize_maker(_alias) or _alias.lower()
+                    if _na and (_na in _nt or _nt.replace(" ", "").startswith(_na[:4])):
+                        _is_same = True
+                        break
+        if _is_same is True:
             pdf_maker_verified = True
             state.error_flags = [f for f in state.error_flags if f.code not in ("ERR_NO_LOGO", "ERR_PDF_MAKER_SOURCE")]
-        elif drawing_result.get("is_same_maker") is False and not maker_in_pdf:
+        elif _is_same is False and not maker_in_pdf:
             pdf_maker_verified = False
 
     _should_run_vision = bool(
@@ -823,7 +874,28 @@ def run_qcode_validation(
                 maker_name=(ctx.maker_name or "").strip(),
                 model_name=(ctx.model_name or "").strip(),
                 extra_order_code_keywords=_extra_oc_kw,
+                maker_logo_hint=_maker_logo_hint,
             )
+            # 메이커 로고/회사명 확인은 재시도 허용(최대 N회).
+            # 1차 결과에서 제조사 동일 문서 판단이 확정되지 않으면 한 번 더 확인한다.
+            for _ in range(_vision_maker_check_attempts - 1):
+                vp_try = (vision_result or {}).get("parsed") if isinstance(vision_result, dict) else None
+                same_doc_try = vp_try.get("is_same_manufacturer_document") if isinstance(vp_try, dict) else None
+                if same_doc_try is True:
+                    break
+                retry_result = run_pdf_vision_validation(
+                    pdf_path=str(ctx.pdf_path),
+                    pdf_full_text=ctx.pdf_text_sample or "",
+                    maker_name=(ctx.maker_name or "").strip(),
+                    model_name=(ctx.model_name or "").strip(),
+                    extra_order_code_keywords=_extra_oc_kw,
+                    maker_logo_hint=_maker_logo_hint,
+                )
+                if retry_result.get("ok") and isinstance(retry_result.get("parsed"), dict):
+                    rp = retry_result["parsed"]
+                    if rp.get("is_same_manufacturer_document") is True:
+                        vision_result = retry_result
+                        break
         except Exception as e:
             vision_result = {"ok": False, "error": str(e)}
 
@@ -957,9 +1029,9 @@ def run_qcode_validation(
                     model_matched = True
                     model_pdf_val = f"URL 확인: {ctx.url_value}"
                     state.error_flags = [f for f in state.error_flags if f.code != "ERR_MODEL_MISMATCH"]
-                if url_spec_result.get("maker_confirmed") is True and not pdf_maker_verified:
-                    pdf_maker_verified = True
-                    state.error_flags = [f for f in state.error_flags if f.code not in ("ERR_NO_LOGO", "ERR_PDF_MAKER_SOURCE")]
+                # maker_confirmed from URL is intentionally NOT used for pdf_maker_verified.
+                # URL may be a distributor/reseller site (e.g. famotor.co.kr), not the maker's own domain.
+                # Manufacturer name must be confirmed from the attached PDF or system data only.
         except Exception as _e:
             url_spec_result = {"ok": False, "error": str(_e)}
 

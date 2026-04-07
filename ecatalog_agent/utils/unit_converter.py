@@ -194,6 +194,46 @@ def _fahrenheit_to_kelvin(f: float) -> float:
 
 _TOLERANCE = 0.03   # ±3% 허용 오차
 
+# ── 타이틀 기반 기본 단위 (단위 없는 숫자에 적용) ──────────────────────────
+# 시스템 데이터에 단위 없이 숫자만 등록된 필드의 암묵적 단위 정의
+_TITLE_DEFAULT_UNITS: list[tuple[list[str], str]] = [
+    # 압력: 시스템 데이터는 kgf/cm² 고정
+    (["pressure", "압력", "정격압력", "최대압력", "사용압력",
+      "pressure rating", "rated pressure", "max pressure"], "kgf/cm2"),
+    # 전압: V 고정
+    (["voltage", "전압", "정격전압", "공급전압", "rated voltage"], "v"),
+    # 전류: A 고정
+    (["current", "전류", "정격전류", "rated current"], "a"),
+    # 주파수: Hz 고정
+    (["frequency", "주파수", "hz", "freq"], "hz"),
+    # 온도: °C 고정
+    (["temperature", "온도", "작동온도", "사용온도", "ambient temperature"], "°c"),
+    # 회전수: rpm 고정
+    (["speed", "rpm", "회전수", "정격속도", "rated speed"], "rpm"),
+]
+
+
+def infer_default_unit(title: str) -> str | None:
+    """사양 타이틀로부터 단위 없는 숫자에 적용할 기본 단위를 반환한다."""
+    t = title.strip().lower()
+    for keywords, unit in _TITLE_DEFAULT_UNITS:
+        if any(k in t for k in keywords):
+            return unit
+    return None
+
+
+def _apply_default_unit(val_str: str, parsed: list[dict], default_unit: str | None) -> tuple[str, list[dict]]:
+    """파싱 결과에 단위가 없고 default_unit이 있으면 단위를 주입해 재파싱한다."""
+    if not default_unit or not parsed:
+        return val_str, parsed
+    if parsed[0]["unit"]:  # 이미 단위 있음
+        return val_str, parsed
+    new_str = f"{parsed[0]['number']} {default_unit}"
+    new_parsed = parse_value_with_unit(new_str)
+    if new_parsed:
+        return new_str, new_parsed
+    return val_str, parsed
+
 
 def _values_close(a: float, b: float, tol: float = _TOLERANCE) -> bool:
     """두 값이 허용 오차 내에 있는지 확인한다."""
@@ -204,12 +244,55 @@ def _values_close(a: float, b: float, tol: float = _TOLERANCE) -> bool:
     return abs(a - b) / max(abs(a), abs(b)) <= tol
 
 
+def _normalize_ip_class(v: str) -> str | None:
+    """'IP55' → '55', '55' → '55'. IP 등급 표기에서 숫자 부분만 반환.
+    IP 등급처럼 보이지 않으면 None."""
+    s = v.strip()
+    m = re.match(r'^ip\s*(\d{2,3})$', s.lower())
+    if m:
+        return m.group(1)
+    # 순수 2~3자리 숫자만 있으면 (맥락에 따라 IP 등급 숫자일 수 있음)
+    if re.match(r'^\d{2,3}$', s):
+        return s
+    return None
+
+
+def _parse_ratio(v: str) -> float | None:
+    """'50:1' → 50.0, '1:50' → 0.02, '1/50' → 0.02. 비율 표기 파싱.
+    비율로 해석 불가능한 경우 None 반환."""
+    v = v.strip()
+    # N:M 형식
+    m = re.match(r'^(\d+(?:[.,]\d+)?)\s*[:/]\s*(\d+(?:[.,]\d+)?)$', v)
+    if m:
+        a = float(m.group(1).replace(',', '.'))
+        b = float(m.group(2).replace(',', '.'))
+        if b == 0:
+            return None
+        return a / b
+    return None
+
+
+def _normalize_rpm_slash(v: str) -> str | None:
+    """'1735/35' 형태에서 '/'  앞 숫자(rpm)만 추출.
+    'X/Y' 패턴에서 X가 rpm 값, Y가 Hz 등 다른 값인 경우.
+    Returns: 앞 숫자 문자열 또는 None"""
+    m = re.match(r'^(\d+(?:[.,]\d+)?)\s*/\s*\d+(?:[.,]\d+)?$', v.strip())
+    if m:
+        return m.group(1)
+    return None
+
+
 def compare_spec_values(
     sys_val_str: str,
     pdf_val_str: str,
+    *,
+    title: str | None = None,
 ) -> dict[str, Any]:
     """
     시스템 등록값과 PDF/도면 추출값을 단위 변환 후 비교한다.
+
+    title: 사양 항목명 (예: "Pressure Rating"). 단위 없는 숫자에 기본 단위 적용에 사용.
+           압력 항목은 kgf/cm²로 고정 등.
 
     Returns:
         {
@@ -221,8 +304,56 @@ def compare_spec_values(
             "note": str,
         }
     """
+    # ── IP 등급 정규화 ('IP55' vs '55' 동일 판정) ──────────────────────
+    sys_ip = _normalize_ip_class(sys_val_str)
+    pdf_ip = _normalize_ip_class(pdf_val_str)
+    if sys_ip is not None and pdf_ip is not None:
+        match = "일치" if sys_ip == pdf_ip else "불일치"
+        return {
+            "match": match,
+            "note": f"IP 등급 정규화: {sys_val_str} vs {pdf_val_str}",
+            "sys_parsed": [], "pdf_parsed": [],
+            "sys_base": None, "pdf_base": None,
+        }
+
+    # ── 감속비 비율 표기 정규화 ('50:1' vs '1:50' vs '1/50') ─────────
+    sys_ratio = _parse_ratio(sys_val_str)
+    pdf_ratio = _parse_ratio(pdf_val_str)
+    if sys_ratio is not None and pdf_ratio is not None:
+        # 두 비율을 각각 정방향/역방향으로 비교 (50:1 ↔ 1:50 둘 다 같은 비율)
+        def _ratio_match(a: float, b: float) -> bool:
+            if a == 0 or b == 0:
+                return a == b
+            return _values_close(a, b) or _values_close(a, 1 / b) or _values_close(1 / a, b)
+        match = "일치" if _ratio_match(sys_ratio, pdf_ratio) else "불일치"
+        return {
+            "match": match,
+            "note": f"감속비 정규화: {sys_val_str}({sys_ratio:.4g}) vs {pdf_val_str}({pdf_ratio:.4g})",
+            "sys_parsed": [], "pdf_parsed": [],
+            "sys_base": sys_ratio, "pdf_base": pdf_ratio,
+        }
+
+    # ── RPM/Hz 복합 표기 정규화 ('1735/35' vs '1735rpm' → 앞 숫자 비교) ─
+    sys_rpm_str = _normalize_rpm_slash(sys_val_str)
+    pdf_rpm_str = _normalize_rpm_slash(pdf_val_str)
+    # 한쪽만 슬래시 표기인 경우도 처리 (1735/35 vs 1735)
+    if sys_rpm_str is not None or pdf_rpm_str is not None:
+        s_str = sys_rpm_str if sys_rpm_str is not None else sys_val_str
+        p_str = pdf_rpm_str if pdf_rpm_str is not None else pdf_val_str
+        # 앞 숫자끼리 재귀 비교 (단위 변환 포함)
+        inner = compare_spec_values(s_str, p_str)
+        if inner["match"] in ("일치", "단위변환일치", "범위내"):
+            inner["note"] = f"RPM 복합표기 정규화: {sys_val_str} vs {pdf_val_str} → " + inner["note"]
+        return inner
+
     sys_parsed = parse_value_with_unit(sys_val_str)
     pdf_parsed = parse_value_with_unit(pdf_val_str)
+
+    # ── 타이틀 기반 기본 단위 적용 (단위 없는 숫자에만) ────────────────
+    if title:
+        default_unit = infer_default_unit(title)
+        sys_val_str, sys_parsed = _apply_default_unit(sys_val_str, sys_parsed, default_unit)
+        pdf_val_str, pdf_parsed = _apply_default_unit(pdf_val_str, pdf_parsed, default_unit)
 
     if not sys_parsed or not pdf_parsed:
         # 숫자가 없으면 문자열 정규화 비교

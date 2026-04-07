@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 import os
 import re
 from pathlib import Path
@@ -31,6 +32,62 @@ from ecatalog_agent.streamlit_poc import (
 from ecatalog_agent.db.logger import load_duplicate_baseline, get_duplicate_baseline_count
 
 st.set_page_config(page_title="POSCO MRO e-Catalog 검증", layout="wide", page_icon="🏭")
+
+# ── 업로드 파일 중복 제거 유틸 ───────────────────────────────────────────────
+
+_QCODE_KEYS = {"qcode", "q코드", "q-code", "q_code"}
+
+
+def _find_qcode_col(df: pd.DataFrame) -> str | None:
+    """DataFrame에서 Q-Code 컬럼명 탐지."""
+    for c in df.columns:
+        norm = str(c).strip().lower().replace("-", "").replace("_", "").replace(" ", "")
+        if norm in _QCODE_KEYS:
+            return c
+    return None
+
+
+def _dedup_df(df: pd.DataFrame, key_col: str | None) -> tuple[pd.DataFrame, int]:
+    """key_col 기준 중복 제거. 첫 번째 행 유지."""
+    if not key_col or key_col not in df.columns:
+        return df, 0
+    before = len(df)
+    df = df.drop_duplicates(subset=[key_col], keep="first")
+    return df.reset_index(drop=True), before - len(df)
+
+
+def _dedup_system_data(file_bytes: bytes) -> tuple[bytes, dict[str, int]]:
+    """시스템 데이터(멀티시트) 각 시트를 Q-Code 기준으로 중복 제거 후 xlsx 반환."""
+    xl = pd.ExcelFile(io.BytesIO(file_bytes))
+    removed: dict[str, int] = {}
+    buf = io.BytesIO()
+    with pd.ExcelWriter(buf, engine="openpyxl") as writer:
+        for sheet in xl.sheet_names:
+            df = pd.read_excel(xl, sheet_name=sheet, dtype=str)
+            q_col = _find_qcode_col(df)
+            df, n = _dedup_df(df, q_col)
+            df.to_excel(writer, sheet_name=sheet, index=False)
+            removed[sheet] = n
+    buf.seek(0)
+    return buf.getvalue(), removed
+
+
+def _dedup_single_sheet(file_bytes: bytes, extra_keys: list[str] | None = None) -> tuple[bytes, int]:
+    """단일 시트 파일을 Q-Code(또는 첫 번째 컬럼) 기준으로 중복 제거 후 xlsx 반환."""
+    df = pd.read_excel(io.BytesIO(file_bytes), dtype=str)
+    q_col = _find_qcode_col(df)
+    if not q_col and extra_keys:
+        for c in df.columns:
+            if str(c).strip().lower() in [k.lower() for k in extra_keys]:
+                q_col = c
+                break
+    if not q_col:
+        q_col = df.columns[0] if len(df.columns) > 0 else None
+    df, removed = _dedup_df(df, q_col)
+    buf = io.BytesIO()
+    df.to_excel(buf, index=False)
+    buf.seek(0)
+    return buf.getvalue(), removed
 
 # ── POSCO MRO e-Catalog 스타일 CSS ───────────────────────────────────────
 st.markdown("""
@@ -346,10 +403,29 @@ with st.sidebar:
         else:
             data_dir = Path("data")
             data_dir.mkdir(parents=True, exist_ok=True)
-            (data_dir / _DATA_FILENAMES["system_data"]).write_bytes(system_data_file.getvalue())
-            (data_dir / _DATA_FILENAMES["pdf_mapping"]).write_bytes(pdf_mapping_file.getvalue())
+            # ① 시스템 데이터 — 멀티시트, Q-Code 기준 중복 제거
+            sys_bytes, sys_removed = _dedup_system_data(system_data_file.getvalue())
+            (data_dir / _DATA_FILENAMES["system_data"]).write_bytes(sys_bytes)
+            total_sys_removed = sum(sys_removed.values())
+            if total_sys_removed:
+                detail = ", ".join(f"{s}: {n}건" for s, n in sys_removed.items() if n)
+                st.info(f"시스템 데이터 중복 제거: {total_sys_removed}건 ({detail})")
+
+            # ② PDF 매핑 — Q-Code 기준 중복 제거
+            pdf_bytes, pdf_removed = _dedup_single_sheet(pdf_mapping_file.getvalue())
+            (data_dir / _DATA_FILENAMES["pdf_mapping"]).write_bytes(pdf_bytes)
+            if pdf_removed:
+                st.info(f"PDF 매핑 중복 제거: {pdf_removed}건")
+
+            # ③ 메이커 목록 — 첫 번째 컬럼(메이커명) 기준 중복 제거
             if maker_list_file:
-                (data_dir / _DATA_FILENAMES["maker_list"]).write_bytes(maker_list_file.getvalue())
+                mk_bytes, mk_removed = _dedup_single_sheet(
+                    maker_list_file.getvalue(),
+                    extra_keys=["maker", "maker_name", "제조사", "업체명", "company"],
+                )
+                (data_dir / _DATA_FILENAMES["maker_list"]).write_bytes(mk_bytes)
+                if mk_removed:
+                    st.info(f"메이커 목록 중복 제거: {mk_removed}건")
             if existing_data_file:
                 existing_df = pd.read_excel(existing_data_file, dtype=str)
                 col_map = {c.lower().replace(" ", "_"): c for c in existing_df.columns}
@@ -426,11 +502,11 @@ def _normalize(s: str) -> str:
     return re.sub(r"[^a-z0-9가-힣]", "", s.lower())
 
 
-def _compare_spec(sys_val: str, pdf_val: str) -> dict:
+def _compare_spec(sys_val: str, pdf_val: str, title: str | None = None) -> dict:
     """단위 변환을 포함한 사양값 비교. 단순 문자열 → 수치+단위변환 순으로 시도."""
     try:
         from ecatalog_agent.utils.unit_converter import compare_spec_values
-        return compare_spec_values(sys_val, pdf_val)
+        return compare_spec_values(sys_val, pdf_val, title=title)
     except Exception:
         # 폴백: 문자열 정규화 비교
         sn = _normalize(sys_val)
@@ -504,20 +580,24 @@ statuses = _compute_statuses(
     pdf_base_dir,
 )
 
-# PDF 있거나 Q3(오류코드)인 Q코드는 모두 목록에 표시
+# PDF가 있거나 Q3으로 시작하는 Q코드는 목록에 표시
 qcodes_with_pdf = [
     q for q in qcode_list
-    if statuses.get(q, (None, False))[1] or is_known_error_code(q)
+    if statuses.get(q, (None, False))[1] or str(q).strip().upper().startswith("Q3")
 ]
 
-# ── 초반 사전 검증: 앞단 7개 + 지정 Q코드 미리 채우기 ──────────────────
+# ── 초반 사전 검증: 일반 7개 + Q3 4개 + 지정 Q코드 미리 채우기 ───────────
 # Streamlit은 위에서부터 계속 재실행되므로, session_state 플래그로 1회만 수행합니다.
 PRELOAD_COUNT = 7
+PRELOAD_Q3_COUNT = 4
 _PRELOAD_EXTRA = ["Q4669390"]  # 앞단 7개 외에 항상 사전 검증할 Q코드
 if not st.session_state.get("_preloaded_first7_done", False):
-    _base = qcodes_with_pdf[:PRELOAD_COUNT]
-    _extra = [q for q in _PRELOAD_EXTRA if q in qcodes_with_pdf and q not in _base]
-    qcodes_to_preload = _base + _extra
+    _normal_pool = [q for q in qcodes_with_pdf if not str(q).strip().upper().startswith("Q3")]
+    _q3_pool = [q for q in qcodes_with_pdf if str(q).strip().upper().startswith("Q3")]
+    _base = _normal_pool[:PRELOAD_COUNT]
+    _q3 = [q for q in _q3_pool[:PRELOAD_Q3_COUNT] if q not in _base]
+    _extra = [q for q in _PRELOAD_EXTRA if q in qcodes_with_pdf and q not in _base and q not in _q3]
+    qcodes_to_preload = _base + _q3 + _extra
     if qcodes_to_preload:
         st.session_state["_preloaded_first7_done"] = True
         st.sidebar.caption(f"초기 사전 검증 중… ({len(qcodes_to_preload)}개)")
@@ -552,6 +632,10 @@ def show_validation_dialog(q_code: str) -> None:
 시스템 정책에 따라 검증 결과와 무관하게 <b>자동승인이 차단</b>됩니다. 담당자 확인 후 처리하세요.</span>
 </div>
 """, unsafe_allow_html=True)
+
+    # 개별 재검증 버튼
+    if st.button("🔄 재검증", key=f"revalidate_{q_code}"):
+        st.session_state["validation_results"].pop(q_code, None)
 
     # 캐시된 결과 사용, 없으면 검증 실행
     if q_code not in st.session_state["validation_results"]:
@@ -740,6 +824,33 @@ def show_validation_dialog(q_code: str) -> None:
             if _t and _v:
                 drawing_spec_map[_t] = _v
 
+    def _drawing_key_match(title_up: str, spec_map: dict[str, str]) -> str | None:
+        """SPEC BOX 키와 시스템 사양 타이틀을 다단계로 매칭."""
+        # 1) 완전 일치
+        if title_up in spec_map:
+            return spec_map[title_up]
+        # 2) 부분 문자열 포함
+        for k, v in spec_map.items():
+            if title_up in k or k in title_up:
+                return v
+        # 3) 핵심 단어 교집합 (예: "PRESSURE RATING" ↔ "MAX. OPERATING PRESSURE")
+        _stop = {"MAX", "MIN", "RATED", "RATING", "OPERATING", "NOMINAL",
+                 "OF", "AT", "AND", "OR", "THE", "FOR", "WITH", "TO", "A"}
+        def _keywords(s: str) -> set[str]:
+            return {w for w in re.sub(r"[^A-Z0-9]", " ", s).split() if w not in _stop and len(w) >= 3}
+        t_kw = _keywords(title_up)
+        best_v, best_score = None, 0
+        for k, v in spec_map.items():
+            k_kw = _keywords(k)
+            common = t_kw & k_kw
+            if common:
+                score = len(common) / max(len(t_kw), len(k_kw), 1)
+                if score > best_score:
+                    best_score, best_v = score, v
+        if best_score >= 0.4:
+            return best_v
+        return None
+
     for spec in expected_specs:
         title = spec.get("title", "")
         value = spec.get("value", "") or "(미입력)"
@@ -747,14 +858,9 @@ def show_validation_dialog(q_code: str) -> None:
 
         # 1순위: 도면 SPEC BOX
         if drawing_spec_map:
-            drawing_val = drawing_spec_map.get(title_up)
-            if not drawing_val:
-                for k, v in drawing_spec_map.items():
-                    if title_up in k or k in title_up:
-                        drawing_val = v
-                        break
+            drawing_val = _drawing_key_match(title_up, drawing_spec_map)
             if drawing_val:
-                cmp = _compare_spec(value, drawing_val)
+                cmp = _compare_spec(value, drawing_val, title=title)
                 match_st = cmp["match"]
                 note = cmp.get("note", "")
                 display = drawing_val + " (도면)"
@@ -769,14 +875,14 @@ def show_validation_dialog(q_code: str) -> None:
         # 2순위: PDF 텍스트
         pdf_val, match_st = _extract_pdf_value(title, value, pdf_text)
         if match_st == "불일치":
-            cmp = _compare_spec(value, pdf_val)
+            cmp = _compare_spec(value, pdf_val, title=title)
             if cmp["match"] in ("일치", "단위변환일치", "범위내"):
                 match_st = cmp["match"]
 
         # 3순위: 웹
         if match_st not in ("일치", "단위변환일치", "범위내") and title in online_map:
             web_val = online_map[title]
-            cmp = _compare_spec(value, web_val)
+            cmp = _compare_spec(value, web_val, title=title)
             pdf_val = web_val + " (웹)"
             match_st = cmp["match"] if cmp["match"] in ("일치", "단위변환일치", "범위내") else "불일치"
 

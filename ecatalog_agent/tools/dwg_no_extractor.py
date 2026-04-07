@@ -357,6 +357,224 @@ def _common_prefix_ratio(a: str, b: str) -> float:
     return common / max(len(a), len(b))
 
 
+# ── 메이커명 전용 추출 ────────────────────────────────────────────────────────
+
+_MAKER_SYSTEM = (
+    "당신은 기계 도면 표제란(Title Block) 판독 전문가입니다. "
+    "이미지는 도면의 우하단 표제란 영역입니다. "
+    "회사명·제조사명·로고 텍스트를 정확히 읽어야 합니다. JSON만 출력하세요."
+)
+
+
+def _crop_titleblock_bottom_right(
+    pdf_path: str,
+    page_idx: int = 0,
+    zoom: float = 3.0,
+    *,
+    x_start: float = 0.0,
+    y_start: float = 0.70,
+) -> bytes | None:
+    """표제란 우하단 영역을 크롭 (x_start·y_start 비율로 조정 가능)."""
+    try:
+        doc = fitz.open(pdf_path)
+        if page_idx >= doc.page_count:
+            page_idx = doc.page_count - 1
+        page = doc.load_page(page_idx)
+        rect = page.rect
+        w, h = rect.width, rect.height
+        clip = fitz.Rect(
+            rect.x0 + w * x_start,
+            rect.y0 + h * y_start,
+            rect.x1,
+            rect.y1,
+        )
+        mat = fitz.Matrix(zoom, zoom)
+        pix = page.get_pixmap(matrix=mat, clip=clip, alpha=False)
+        png = pix.tobytes("png")
+        doc.close()
+        return png
+    except Exception:
+        return None
+
+
+def _gpt_extract_maker_from_titleblock(
+    image_png: bytes,
+    *,
+    known_maker: str = "",
+    attempt: int = 1,
+    model_id: str = "gpt-4o",
+) -> dict[str, Any]:
+    """GPT Vision으로 표제란에서 회사명/메이커명을 집중 추출한다.
+
+    attempt=1: 로고 텍스트·회사명 전반 탐색
+    attempt=2: 1차 미확인 시 더 넓은 관점으로 재확인
+    """
+    try:
+        from openai import OpenAI
+    except ImportError:
+        return {"ok": False, "error": "openai 패키지 없음"}
+
+    api_key = os.environ.get("OPENAI_API_KEY", "").strip()
+    if not api_key:
+        return {"ok": False, "error": "OPENAI_API_KEY 없음"}
+
+    client = OpenAI(api_key=api_key)
+    b64 = base64.standard_b64encode(image_png).decode("ascii")
+
+    if attempt == 1:
+        prompt = "\n".join([
+            "이 이미지는 도면(Engineering Drawing)의 우하단 표제란(Title Block) 영역입니다.",
+            "",
+            "표제란에서 회사명·제조사명을 찾아주세요.",
+            "로고 이미지 옆 텍스트, 'COMPANY', 'MANUFACTURER', '제조사', 또는 인쇄된 브랜드명을 확인하세요.",
+            "예: 'SMC Pneumatics Korea', 'SMC Corporation', 'HYOSUNG MOTORS' 등",
+            f"{'참고 - 시스템 등록 제조사: ' + known_maker if known_maker else ''}",
+            "",
+            "출력 스키마 (JSON 한 개만):",
+            '{"company_name": string|null,',
+            ' "logo_text": string|null,',
+            ' "confidence": 0.0~1.0,',
+            ' "reason": string}',
+        ])
+    else:
+        prompt = "\n".join([
+            "이 이미지는 도면 우하단 표제란입니다. 1차 분석에서 회사명이 불명확했습니다.",
+            "",
+            "다시 한 번 꼼꼼히 확인해 주세요:",
+            "- 로고 그래픽 옆의 모든 텍스트",
+            "- 표제란 하단·좌하단·중앙 영역의 회사명",
+            "- 작은 글씨로 인쇄된 브랜드명·도메인·주소",
+            "- 영문·한글·혼합 표기 모두 포함",
+            f"{'참고 - 시스템 등록 제조사: ' + known_maker if known_maker else ''}",
+            "",
+            "출력 스키마 (JSON 한 개만):",
+            '{"company_name": string|null,',
+            ' "logo_text": string|null,',
+            ' "confidence": 0.0~1.0,',
+            ' "reason": string}',
+        ])
+
+    content: list[dict] = [
+        {"type": "text", "text": prompt},
+        {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{b64}", "detail": "high"}},
+    ]
+
+    _FALLBACK = "gpt-4o-mini"
+    raw = None
+    for _mid in [model_id, _FALLBACK]:
+        try:
+            resp = client.chat.completions.create(
+                model=_mid,
+                messages=[
+                    {"role": "system", "content": _MAKER_SYSTEM},
+                    {"role": "user", "content": content},
+                ],
+                max_tokens=300,
+                temperature=0.0,
+            )
+            raw = (resp.choices[0].message.content or "").strip()
+            break
+        except Exception as e:
+            err = str(e)
+            if "403" in err or "model_not_found" in err or "model" in err.lower():
+                continue
+            return {"ok": False, "error": err}
+
+    if raw is None:
+        return {"ok": False, "error": f"모델 접근 실패 ({model_id})"}
+
+    m = re.search(r"\{[\s\S]*\}", raw)
+    if not m:
+        return {"ok": False, "error": "JSON 파싱 실패", "raw": raw}
+    try:
+        parsed = json.loads(m.group(0))
+    except json.JSONDecodeError:
+        return {"ok": False, "error": "JSON 파싱 실패", "raw": raw}
+
+    return {"ok": True, "parsed": parsed}
+
+
+def extract_maker_from_titleblock(
+    pdf_path: str,
+    *,
+    known_maker: str = "",
+    page_idx: int = 0,
+    crop_zoom: float = 3.0,
+) -> dict[str, Any]:
+    """도면 표제란 우하단에서 회사명/메이커명을 2회 호출로 고정밀 추출한다.
+
+    1차: 전체 하단 30% 크롭 → GPT 집중 추출
+    2차: 1차 confidence < 0.6 이거나 null이면, 더 넓은 영역(하단 40%)으로 재확인
+
+    Returns:
+        {
+            "company_name": str | None,
+            "logo_text": str | None,
+            "confidence": float,
+            "attempts": int,
+            "method": str,
+        }
+    """
+    result: dict[str, Any] = {
+        "company_name": None,
+        "logo_text": None,
+        "confidence": 0.0,
+        "attempts": 0,
+        "method": "none",
+    }
+
+    # ── 1차: 우하단 30% (표제란 전형 위치) ──────────────────────────────
+    crop1 = _crop_titleblock_bottom_right(pdf_path, page_idx, zoom=crop_zoom,
+                                          x_start=0.0, y_start=0.70)
+    if crop1 is None:
+        return result
+
+    r1 = _gpt_extract_maker_from_titleblock(crop1, known_maker=known_maker, attempt=1)
+    result["attempts"] = 1
+
+    if r1.get("ok"):
+        p1 = r1.get("parsed") or {}
+        company = (p1.get("company_name") or "").strip() or None
+        logo = (p1.get("logo_text") or "").strip() or None
+        conf = float(p1.get("confidence") or 0.0)
+        result.update({
+            "company_name": company,
+            "logo_text": logo,
+            "confidence": conf,
+            "method": "gpt_crop_1st",
+        })
+
+        # 1차에서 충분히 확인됐으면 종료
+        if company and conf >= 0.6:
+            return result
+
+    # ── 2차: 더 넓은 하단 40% 재확인 (x 전체, y 60~100%) ───────────────
+    crop2 = _crop_titleblock_bottom_right(pdf_path, page_idx, zoom=crop_zoom,
+                                          x_start=0.0, y_start=0.60)
+    if crop2 is None:
+        return result
+
+    r2 = _gpt_extract_maker_from_titleblock(crop2, known_maker=known_maker, attempt=2)
+    result["attempts"] = 2
+
+    if r2.get("ok"):
+        p2 = r2.get("parsed") or {}
+        company2 = (p2.get("company_name") or "").strip() or None
+        logo2 = (p2.get("logo_text") or "").strip() or None
+        conf2 = float(p2.get("confidence") or 0.0)
+
+        # 2차가 더 높은 신뢰도면 교체
+        if conf2 > result["confidence"] or (company2 and not result["company_name"]):
+            result.update({
+                "company_name": company2,
+                "logo_text": logo2,
+                "confidence": conf2,
+                "method": "gpt_crop_2nd",
+            })
+
+    return result
+
+
 # ── 공개 엔트리포인트 ─────────────────────────────────────────────────────────
 
 def extract_dwg_no(

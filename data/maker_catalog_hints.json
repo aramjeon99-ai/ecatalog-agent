@@ -9,7 +9,9 @@
     "relax_only_when_model_matched": "완화 시 모델이 이미 일치했을 때만 (기본 true)",
     "extra_order_code_page_keywords": "형번 후보 페이지 점수에 가산할 키워드",
     "prefer_vision_for_order_code": "OPENAI_API_KEY가 있으면 비전 호출을 더 자주 시도 (true/false)",
-    "always_run_vision_with_api": "키가 있으면 해당 메이커는 항상 비전 실행 (비용 큼, 기본 생략)"
+    "always_run_vision_with_api": "키가 있으면 해당 메이커는 항상 비전 실행 (비용 큼, 기본 생략)",
+    "vision_logo_hint_ko": "비전 메이커 확인 시 추가할 로고/위치 힌트",
+    "vision_maker_check_attempts": "메이커 로고/회사명 비전 확인 시도 횟수(기본 1)"
   },
   "makers": {
     "SMC": {
@@ -20,6 +22,14 @@
       "relax_pdf_maker_if_filename_contains": ["smc", "_smc"],
       "relax_only_when_model_matched": true,
       "extra_order_code_page_keywords": ["실린더", "cylinder", "cj2", "cdj2", "오토스위치", "에어"],
+      "prefer_vision_for_order_code": true
+    },
+    "효성": {
+      "match_names": ["효성", "효성모터", "HYOSUNG", "HYOSUNG MOTOR", "HYOSUNG MOTORS"],
+      "notes_ko": "효성 모터 자료는 데이터시트 좌측 상단의 파란 '효성' 로고를 우선 확인.",
+      "extra_text_tokens_for_maker_evidence": ["효성", "hyosung"],
+      "vision_logo_hint_ko": "효성 모터 자료는 데이터시트 좌측 상단의 파란색 '효성' 로고(또는 HYOSUNG 표기)가 메이커 근거입니다. 해당 영역을 우선 확인하세요.",
+      "vision_maker_check_attempts": 2,
       "prefer_vision_for_order_code": true
     }
   }
