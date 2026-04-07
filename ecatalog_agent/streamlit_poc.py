@@ -704,7 +704,8 @@ def run_qcode_validation(
     )
 
     fd = state.final_decision
-    assert fd is not None
+    if fd is None:
+        raise RuntimeError("에이전트가 최종 결정을 생성하지 못했습니다.")
 
     # ── Q3 오류 코드 → 즉시 자동 회송 플래그 ────────────────────
     if is_known_error_code(ctx.q_code):
@@ -746,6 +747,11 @@ def run_qcode_validation(
         extra_aliases=_extra_maker_tokens,
     )
     pdf_maker_verified = bool(maker_in_pdf)
+
+    # maker_catalog_hints에 등록된 메이커는 e-catalog 유사도와 무관하게 인식.
+    # PDF 텍스트에서 제조사명(한글 별칭 포함)이 확인되면 maker_matched=True로 보정.
+    if not maker_matched and maker_profile and maker_in_pdf:
+        maker_matched = True
     vision_result: dict[str, Any] | None = None
     drawing_result: dict[str, Any] | None = None
     maker_hint_relax_reason: str | None = None
@@ -1035,6 +1041,37 @@ def run_qcode_validation(
         except Exception as _e:
             url_spec_result = {"ok": False, "error": str(_e)}
 
+    # ── 사전 판별 ───────────────────────────────────────────────────────────
+    # 절대 제거하지 않을 에러 코드 (PDF/사양 확인과 무관하게 항상 차단)
+    _ALWAYS_KEEP = {
+        "ERR_QUOTE_DOCUMENT",     # 견적서 (R6)
+        "ERR_KNOWN_ERROR_CODE",   # Q3 오류코드 (R4)
+        "ERR_DUPLICATE",          # 중복 (R1)
+        "ERR_DUPLICATE_ITEM",
+        "ERR_NOT_MANUFACTURER",   # 비제조업 (R5)
+        "ERR_NON_MANUFACTURER",
+    }
+    # 사양값 전부 9999(미입력) → 모델/메이커만으로 충분
+    _no_meaningful_specs = len(ctx.expected_specs) == 0
+    # PDF + 모델 + 메이커 + 출처 모두 확인됨
+    _pdf_fully_confirmed = (
+        ctx.pdf_exists
+        and model_matched
+        and maker_matched
+        and (pdf_maker_verified or _no_meaningful_specs)
+    )
+
+    # ── 보조 휴리스틱 에러 제거 ─────────────────────────────────────────────
+    if _pdf_fully_confirmed:
+        # PDF 완전 확인 or 사양 미입력+모델메이커 일치 → 보조 에러 전부 제거
+        state.error_flags = [f for f in state.error_flags if f.code in _ALWAYS_KEEP]
+    elif ctx.pdf_exists:
+        # PDF는 있지만 부분 확인 → step3 fuzzy spec 에러만 제거
+        state.error_flags = [
+            f for f in state.error_flags
+            if f.code not in ("ERR_SPEC_MISMATCH", "ERR_INCOMPLETE_SPEC", "ERR_SPEC_NOT_FOUND")
+        ]
+
     # ── 최종 강제 회송 vs STEP6 재평가 (UI 모델·메이커 일치와 outcome 일치화) ──
     from ecatalog_agent.steps.step6_decision import step6_final_decision
 
@@ -1045,11 +1082,15 @@ def run_qcode_validation(
         final_forced.append("ERR_MODEL_MISMATCH")
     if not maker_matched:
         final_forced.append("ERR_MAKER_MISMATCH")
-    if maker_matched and not pdf_maker_verified:
+    # 사양 미입력(9999) 케이스는 PDF 출처 검증 없어도 됨
+    if maker_matched and not pdf_maker_verified and not _no_meaningful_specs:
         final_forced.append("ERR_PDF_MAKER_SOURCE")
 
     if final_forced:
         outcome = "REJECTED"
+    elif _pdf_fully_confirmed and not state.error_flags:
+        # PDF 완전 확인(또는 사양 미입력) + 잔여 에러 없음 → 바로 승인
+        outcome = "APPROVED"
     else:
         fd = step6_final_decision(
             step_results=[

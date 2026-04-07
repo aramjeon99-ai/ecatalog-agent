@@ -356,6 +356,9 @@ config = load_app_config()
 data_loaded = config is not None
 
 with st.sidebar:
+    # 사전 검증 진행 상황 — 최상단 고정 (아래 로직에서 업데이트)
+    _preload_status_slot = st.empty()
+    _preload_bar_slot    = st.empty()
     st.markdown("""
 <div class="sidebar-header">
   <div class="sb-brand">POSCO</div>
@@ -586,36 +589,61 @@ qcodes_with_pdf = [
     if statuses.get(q, (None, False))[1] or str(q).strip().upper().startswith("Q3")
 ]
 
-# ── 초반 사전 검증: 일반 7개 + Q3 4개 + 지정 Q코드 미리 채우기 ───────────
-# Streamlit은 위에서부터 계속 재실행되므로, session_state 플래그로 1회만 수행합니다.
-PRELOAD_COUNT = 7
-PRELOAD_Q3_COUNT = 4
-_PRELOAD_EXTRA = ["Q4669390"]  # 앞단 7개 외에 항상 사전 검증할 Q코드
-if not st.session_state.get("_preloaded_first7_done", False):
+# ── 사전 검증: 전체 30개 배치 처리 (일반 + Q3 포함) ─────────────────────
+# 1라운드: 첫 실행 시 전체 목록의 앞 30개를 배치 검증
+# 2라운드: 나머지를 백그라운드로 계속 진행 (Streamlit 재실행 사이클 활용)
+PRELOAD_TOTAL = 30        # 목표 사전 검증 수
+PRELOAD_BATCH = 5         # 한 사이클에 처리할 수 (너무 많으면 UI 블로킹)
+
+if not st.session_state.get("_preload_done", False):
     _normal_pool = [q for q in qcodes_with_pdf if not str(q).strip().upper().startswith("Q3")]
-    _q3_pool = [q for q in qcodes_with_pdf if str(q).strip().upper().startswith("Q3")]
-    _base = _normal_pool[:PRELOAD_COUNT]
-    _q3 = [q for q in _q3_pool[:PRELOAD_Q3_COUNT] if q not in _base]
-    _extra = [q for q in _PRELOAD_EXTRA if q in qcodes_with_pdf and q not in _base and q not in _q3]
-    qcodes_to_preload = _base + _q3 + _extra
-    if qcodes_to_preload:
-        st.session_state["_preloaded_first7_done"] = True
-        st.sidebar.caption(f"초기 사전 검증 중… ({len(qcodes_to_preload)}개)")
-        with st.spinner(f"Q코드 사전 검증 중… ({len(qcodes_to_preload)}개)"):
-            for q_code in qcodes_to_preload:
-                if q_code in st.session_state["validation_results"]:
-                    continue
-                try:
-                    st.session_state["validation_results"][q_code] = run_qcode_validation(
-                        q_code=q_code,
-                        qcode_master_df=qcode_master_df,
-                        spec_detail_df=spec_detail_df,
-                        pdf_mapping_df=pdf_mapping_df,
-                        maker_list_df=maker_list_df,
-                        pdf_base_dir=pdf_base_dir,
-                    )
-                except Exception as e:
-                    st.session_state["validation_results"][q_code] = {"error": str(e)}
+    _q3_pool     = [q for q in qcodes_with_pdf if str(q).strip().upper().startswith("Q3")]
+    # Q3 제외 일반 코드 우선, 남은 슬롯에 Q3 채우기
+    _target = _normal_pool[:PRELOAD_TOTAL]
+    _q3_fill = [q for q in _q3_pool if q not in _target]
+    if len(_target) < PRELOAD_TOTAL:
+        _target += _q3_fill[:PRELOAD_TOTAL - len(_target)]
+
+    st.session_state.setdefault("_preload_target", _target)
+    st.session_state.setdefault("_preload_idx", 0)
+
+_target = st.session_state.get("_preload_target", [])
+_idx    = st.session_state.get("_preload_idx", 0)
+_remaining = [q for q in _target[_idx:] if q not in st.session_state["validation_results"]]
+
+if _remaining and not st.session_state.get("_preload_done", False):
+    _batch = _remaining[:PRELOAD_BATCH]
+    _done_so_far = sum(1 for q in _target if q in st.session_state["validation_results"])
+    _progress_label = f"사전 검증 중… {_done_so_far}/{len(_target)}개 완료"
+    _preload_status_slot.caption(_progress_label)
+    _preload_bar_slot.progress(_done_so_far / len(_target))
+    with st.spinner(_progress_label):
+        for q_code in _batch:
+            if q_code in st.session_state["validation_results"]:
+                continue
+            try:
+                st.session_state["validation_results"][q_code] = run_qcode_validation(
+                    q_code=q_code,
+                    qcode_master_df=qcode_master_df,
+                    spec_detail_df=spec_detail_df,
+                    pdf_mapping_df=pdf_mapping_df,
+                    maker_list_df=maker_list_df,
+                    pdf_base_dir=pdf_base_dir,
+                )
+            except Exception as e:
+                st.session_state["validation_results"][q_code] = {"error": str(e)}
+    st.session_state["_preload_idx"] = _idx + PRELOAD_BATCH
+    _done_so_far = sum(1 for q in _target if q in st.session_state["validation_results"])
+    _preload_bar_slot.progress(min(_done_so_far / len(_target), 1.0))
+    if _done_so_far >= len(_target):
+        st.session_state["_preload_done"] = True
+        _preload_status_slot.empty()
+        _preload_bar_slot.empty()
+    st.rerun()
+else:
+    st.session_state["_preload_done"] = True
+    _preload_status_slot.empty()
+    _preload_bar_slot.empty()
 
 
 # ── 검증 결과 다이얼로그 ───────────────────────────────────────────────
@@ -677,11 +705,16 @@ def show_validation_dialog(q_code: str) -> None:
     model_result   = "일치" if model_matched else "불일치"
     maker_result, maker_pdf_val = _compare_maker(sys_maker, best_maker, similarity)
 
-    # Maker 목록에 없거나(=best_matched_maker가 None) 해서 "(없음)"으로 표시되더라도,
-    # PDF 텍스트에서 시스템 메이커명이 실제로 감지된 경우에는
-    # "동일 메이커"로 UI 판정을 보정한다.
+    # maker_matched=True (백엔드 확정) 인데 UI 결과가 불일치라면 보정.
+    # 케이스:
+    #   1) best_maker가 None → "(없음)"
+    #   2) hints로 인식됐지만 e-catalog 유사도 < 85% (예: HYOSUNG vs Hanyoung Nux)
     maker_in_pdf_text = bool(judgment.get("maker_in_pdf_text"))
-    if maker_pdf_val == "(없음)" and maker_in_pdf_text:
+    if maker_matched and maker_result != "일치":
+        maker_result = "일치"
+        # PDF 텍스트 또는 hints로 확인된 경우 시스템 메이커명을 표시
+        maker_pdf_val = sys_maker if maker_in_pdf_text else (maker_pdf_val or sys_maker)
+    elif maker_pdf_val == "(없음)" and maker_in_pdf_text:
         maker_result = "일치"
         maker_pdf_val = sys_maker
 
@@ -1101,17 +1134,26 @@ _STATUS_BADGE_DIM = {
 }
 
 # 요약 테이블 빌드 + PDF 없는 항목 제외
+_q_col_summary = next(
+    (c for c in qcode_master_df.columns
+     if re.sub(r"[-_ ]", "", str(c).strip().lower()) in {"qcode", "q코드"}),
+    qcode_master_df.columns[0],
+)
+_품명_col   = next((c for c in qcode_master_df.columns if "품명" in str(c)), None)
+_maker_col  = next((c for c in qcode_master_df.columns if "maker" in str(c).lower() and "name" in str(c).lower()), None)
+_model_col  = next((c for c in qcode_master_df.columns if str(c).strip().lower() in ("model-1", "model_1", "model1")), None)
+
 summary_rows = []
 for q in qcodes_with_pdf:
-    rows = qcode_master_df[qcode_master_df["Q-Code"].astype(str).str.strip() == q]
+    rows = qcode_master_df[qcode_master_df[_q_col_summary].astype(str).str.strip() == q]
     r = rows.iloc[0] if len(rows) > 0 else None
     result = st.session_state["validation_results"].get(q)
     outcome = result["outcome"] if result else None
     summary_rows.append({
         "Q-Code": q,
-        "품명":   (r.get("품명")        if r is not None else "") or "",
-        "제조사": (r.get("Maker Name-1") if r is not None else "") or "",
-        "모델명": (r.get("Model-1")      if r is not None else "") or "",
+        "품명":   (r[_품명_col]  if r is not None and _품명_col  else "") or "",
+        "제조사": (r[_maker_col] if r is not None and _maker_col else "") or "",
+        "모델명": (r[_model_col] if r is not None and _model_col else "") or "",
         "_outcome": outcome,
     })
 

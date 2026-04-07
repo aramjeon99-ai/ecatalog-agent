@@ -31,6 +31,11 @@
       "vision_logo_hint_ko": "효성 모터 자료는 데이터시트 좌측 상단의 파란색 '효성' 로고(또는 HYOSUNG 표기)가 메이커 근거입니다. 해당 영역을 우선 확인하세요.",
       "vision_maker_check_attempts": 2,
       "prefer_vision_for_order_code": true
+    },
+    "하나기전": {
+      "match_names": ["하나기전", "HANA MECHANICAL", "HANA MECHANICAL&ELECTRICAL", "HANA MECHANICAL & ELECTRICAL", "HANA M&E", "HANAMECHANICAL"],
+      "notes_ko": "한글 회사명 '하나기전'이 PDF에 표기될 수 있음. 영문명은 HANA MECHANICAL&ELECTRICAL.",
+      "extra_text_tokens_for_maker_evidence": ["하나기전", "hana mechanical", "hana m&e", "hanamechanical"]
     }
   }
 }
