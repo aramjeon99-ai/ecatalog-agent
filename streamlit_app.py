@@ -366,7 +366,7 @@ with st.sidebar:
 </div>
 """, unsafe_allow_html=True)
     st.markdown("#### 📂 기준 데이터 등록")
-    st.caption("최초 1회 업로드 후 자동 로드됩니다.")
+    st.caption("① 시스템 데이터는 새 파일로 교체됩니다. ②③④는 새 파일을 올릴 때만 교체됩니다.")
 
     pdf_base_dir_input = st.text_input(
         "PDF 저장 폴더 경로",
@@ -401,12 +401,12 @@ with st.sidebar:
     if st.button("데이터 저장", type="primary"):
         if not pdf_base_dir_input.strip():
             st.error("PDF 폴더 경로를 입력하세요.")
-        elif not system_data_file or not pdf_mapping_file:
-            st.error("① ② 파일은 필수입니다.")
+        elif not system_data_file:
+            st.error("① 시스템 데이터 파일은 필수입니다.")
         else:
             data_dir = Path("data")
             data_dir.mkdir(parents=True, exist_ok=True)
-            # ① 시스템 데이터 — 멀티시트, Q-Code 기준 중복 제거
+            # ① 시스템 데이터 — 새 파일로 완전 교체 + Q-Code 기준 중복 제거
             sys_bytes, sys_removed = _dedup_system_data(system_data_file.getvalue())
             (data_dir / _DATA_FILENAMES["system_data"]).write_bytes(sys_bytes)
             total_sys_removed = sum(sys_removed.values())
@@ -414,13 +414,17 @@ with st.sidebar:
                 detail = ", ".join(f"{s}: {n}건" for s, n in sys_removed.items() if n)
                 st.info(f"시스템 데이터 중복 제거: {total_sys_removed}건 ({detail})")
 
-            # ② PDF 매핑 — Q-Code 기준 중복 제거
-            pdf_bytes, pdf_removed = _dedup_single_sheet(pdf_mapping_file.getvalue())
-            (data_dir / _DATA_FILENAMES["pdf_mapping"]).write_bytes(pdf_bytes)
-            if pdf_removed:
-                st.info(f"PDF 매핑 중복 제거: {pdf_removed}건")
+            # ② PDF 매핑 — 새 파일이 있을 때만 교체 (없으면 기존 파일 유지)
+            _pdf_map_path = data_dir / _DATA_FILENAMES["pdf_mapping"]
+            if pdf_mapping_file:
+                pdf_bytes, pdf_removed = _dedup_single_sheet(pdf_mapping_file.getvalue())
+                _pdf_map_path.write_bytes(pdf_bytes)
+                if pdf_removed:
+                    st.info(f"PDF 매핑 중복 제거: {pdf_removed}건")
+            elif not _pdf_map_path.exists():
+                st.warning("② PDF 매핑 파일이 없습니다. 검증 시 PDF를 찾을 수 없을 수 있습니다.")
 
-            # ③ 메이커 목록 — 첫 번째 컬럼(메이커명) 기준 중복 제거
+            # ③ 메이커 목록 — 새 파일이 있을 때만 교체 (없으면 기존 파일 유지)
             if maker_list_file:
                 mk_bytes, mk_removed = _dedup_single_sheet(
                     maker_list_file.getvalue(),
@@ -583,26 +587,33 @@ statuses = _compute_statuses(
     pdf_base_dir,
 )
 
-# PDF가 있거나 Q3으로 시작하는 Q코드는 목록에 표시
+# PDF 또는 URL이 있거나, Q3으로 시작하는 Q코드는 목록에 표시
+# quick_status_check: status != "자동회송" or (status == "자동회송" and pdf_exists)
+# → pdf_exists=True이거나 URL 있어서 자동회송이 아닌 경우 포함
 qcodes_with_pdf = [
     q for q in qcode_list
-    if statuses.get(q, (None, False))[1] or str(q).strip().upper().startswith("Q3")
+    if statuses.get(q, ("자동회송", False))[0] != "자동회송"
+    or statuses.get(q, ("자동회송", False))[1]
+    or str(q).strip().upper().startswith("Q3")
 ]
 
-# ── 사전 검증: 전체 30개 배치 처리 (일반 + Q3 포함) ─────────────────────
-# 1라운드: 첫 실행 시 전체 목록의 앞 30개를 배치 검증
-# 2라운드: 나머지를 백그라운드로 계속 진행 (Streamlit 재실행 사이클 활용)
-PRELOAD_TOTAL = 30        # 목표 사전 검증 수
+# ── 사전 검증: 앞 7개 + 뒤 7개 배치 처리 ────────────────────────────────
+PRELOAD_HEAD = 7          # 앞에서 처리할 수
+PRELOAD_TAIL = 7          # 뒤에서 처리할 수
 PRELOAD_BATCH = 5         # 한 사이클에 처리할 수 (너무 많으면 UI 블로킹)
 
 if not st.session_state.get("_preload_done", False):
     _normal_pool = [q for q in qcodes_with_pdf if not str(q).strip().upper().startswith("Q3")]
     _q3_pool     = [q for q in qcodes_with_pdf if str(q).strip().upper().startswith("Q3")]
-    # Q3 제외 일반 코드 우선, 남은 슬롯에 Q3 채우기
-    _target = _normal_pool[:PRELOAD_TOTAL]
+    # 앞 7개 + 뒤 7개 (겹치지 않게, Q3 제외 일반 코드 우선)
+    _head = _normal_pool[:PRELOAD_HEAD]
+    _tail = [q for q in _normal_pool[-PRELOAD_TAIL:] if q not in _head]
+    _target = _head + _tail
+    # 남은 슬롯에 Q3 채우기
+    _total = PRELOAD_HEAD + PRELOAD_TAIL
     _q3_fill = [q for q in _q3_pool if q not in _target]
-    if len(_target) < PRELOAD_TOTAL:
-        _target += _q3_fill[:PRELOAD_TOTAL - len(_target)]
+    if len(_target) < _total:
+        _target += _q3_fill[:_total - len(_target)]
 
     st.session_state.setdefault("_preload_target", _target)
     st.session_state.setdefault("_preload_idx", 0)
@@ -847,6 +858,21 @@ def show_validation_dialog(q_code: str) -> None:
         if t and v:
             online_map[t] = v
 
+    # URL 사양 추출값(extracted_specs)도 online_map에 병합 (우선순위: URL > 웹검색)
+    _url_spec_r = judgment.get("url_spec_result") or {}
+    if _url_spec_r.get("ok") and _url_spec_r.get("url_type") != "SKIPPED":
+        for _sp in (_url_spec_r.get("extracted_specs") or []):
+            _t = (str(_sp.get("title") or "")).strip()
+            _v = (str(_sp.get("value") or "")).strip()
+            if _t and _v:
+                online_map[_t] = _v + " (URL)"
+        # spec_match_summary의 actual 값도 반영 (title 키 기준)
+        for _sm in (_url_spec_r.get("spec_match_summary") or []):
+            _t = (str(_sm.get("title") or "")).strip()
+            _v = (str(_sm.get("actual") or "")).strip()
+            if _t and _v and _t not in online_map:
+                online_map[_t] = _v + " (URL)"
+
     # 도면인 경우 SPEC BOX 추출값을 우선 사용
     drawing_spec_map: dict[str, str] = {}
     if judgment.get("is_drawing_document"):
@@ -912,11 +938,12 @@ def show_validation_dialog(q_code: str) -> None:
             if cmp["match"] in ("일치", "단위변환일치", "범위내"):
                 match_st = cmp["match"]
 
-        # 3순위: 웹
+        # 3순위: URL 추출값 / 웹검색 힌트 (online_map에 URL+웹 통합)
         if match_st not in ("일치", "단위변환일치", "범위내") and title in online_map:
             web_val = online_map[title]
             cmp = _compare_spec(value, web_val, title=title)
-            pdf_val = web_val + " (웹)"
+            # "(URL)" 태그는 이미 online_map에 포함됨; 없으면 "(웹)" 표시
+            pdf_val = web_val if "(URL)" in web_val or "(도면)" in web_val else web_val + " (웹)"
             match_st = cmp["match"] if cmp["match"] in ("일치", "단위변환일치", "범위내") else "불일치"
 
         spec_pdf_vals.append({"title": title, "sys_value": value,

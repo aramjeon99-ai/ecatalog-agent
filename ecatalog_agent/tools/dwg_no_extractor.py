@@ -106,6 +106,34 @@ def _full_page_png(
         return None
 
 
+def _crop_right_edge_vertical_png(
+    pdf_path: str,
+    page_idx: int = 0,
+    zoom: float = 3.0,
+) -> bytes | None:
+    """페이지 우측 가장자리 세로 표기 영역을 고해상도 PNG로 렌더링한다.
+
+    도면에 따라 모델명/도번이 우측 가장자리(세로 텍스트)로 인쇄되는 케이스를 대응한다.
+    - x: 88% ~ 100% (우측 12%)
+    - y: 5% ~ 95% (상하 여백 제외)
+    """
+    try:
+        doc = fitz.open(pdf_path)
+        if page_idx >= doc.page_count:
+            page_idx = doc.page_count - 1
+        page = doc.load_page(page_idx)
+        rect = page.rect
+        w, h = rect.width, rect.height
+        clip = fitz.Rect(rect.x0 + w * 0.88, rect.y0 + h * 0.05, rect.x1, rect.y0 + h * 0.95)
+        mat = fitz.Matrix(zoom, zoom)
+        pix = page.get_pixmap(matrix=mat, clip=clip, alpha=False)
+        png_bytes = pix.tobytes("png")
+        doc.close()
+        return png_bytes
+    except Exception:
+        return None
+
+
 # ── 텍스트 레이어 추출 ────────────────────────────────────────────────────────
 
 def _extract_titleblock_text(pdf_path: str, page_idx: int = 0) -> str:
@@ -220,6 +248,7 @@ def _gpt_extract_dwg_no(
     image_png: bytes,
     *,
     model_name: str = "",
+    area_hint: str = "titleblock",
     model_id: str = "gpt-4o",
 ) -> dict[str, Any]:
     """GPT Vision으로 DWG NO만 집중 추출한다."""
@@ -235,8 +264,13 @@ def _gpt_extract_dwg_no(
     client = OpenAI(api_key=api_key)
     b64 = base64.standard_b64encode(image_png).decode("ascii")
 
+    _area_desc = (
+        "이 이미지는 도면의 우측 가장자리 영역입니다. 세로(90도 회전된) 텍스트까지 읽으세요."
+        if area_hint == "right_edge_vertical"
+        else "이 이미지는 도면의 우하단 표제란(Title Block) 영역입니다."
+    )
     prompt_lines = [
-        "이 이미지는 도면의 우하단 표제란(Title Block) 영역입니다.",
+        _area_desc,
         "",
         f"시스템 등록 모델명(참고용): {model_name}" if model_name else "",
         "",
@@ -244,7 +278,8 @@ def _gpt_extract_dwg_no(
         "1. DWG NO. (또는 DRAWING NO., 도번) 항목의 값 → dwg_no",
         "   - 영문 대문자와 숫자 조합, 하이픈(-)으로 구분된 파트넘버 형식",
         "   - 알파벳 O(오)와 숫자 0(영), 알파벳 I(아이)와 숫자 1(일)을 정확히 구분",
-        "   - 읽기 어렵거나 표제란이 없으면 null",
+        "   - 우측 가장자리 세로 인쇄 모델/도번도 후보로 포함",
+        "   - 읽기 어렵거나 해당 항목이 없으면 null",
         "2. 후보가 여러 개 보이면 candidates 배열에 모두 포함",
         "3. 읽은 근거와 불확실 요소를 reason에 간단히 기술",
         "",
@@ -610,13 +645,13 @@ def extract_dwg_no(
     if crop_png is None:
         crop_png = _full_page_png(pdf_path, page_idx, zoom=2.0)
 
-    # ── Step 3: GPT Vision으로 DWG NO 집중 추출 ──────────────────────────
+    # ── Step 3: GPT Vision으로 DWG NO 집중 추출 (표제란 + 우측세로영역) ────
     gpt_dwg_no: str | None = None
     gpt_candidates: list[str] = []
     gpt_method = "none"
 
     if crop_png:
-        gpt_result = _gpt_extract_dwg_no(crop_png, model_name=model_name)
+        gpt_result = _gpt_extract_dwg_no(crop_png, model_name=model_name, area_hint="titleblock")
         if gpt_result.get("ok"):
             p = gpt_result.get("parsed") or {}
             gpt_dwg_no = (p.get("dwg_no") or "").strip() or None
@@ -634,6 +669,30 @@ def extract_dwg_no(
                     existing = [c["value"] for c in all_candidates]
                     if gc not in existing:
                         all_candidates.append({"value": gc, "source": "gpt_candidate", "score": 0.0})
+
+    # 우측 가장자리 세로 텍스트 영역 추가 시도
+    right_edge_png = _crop_right_edge_vertical_png(pdf_path, page_idx, zoom=crop_zoom)
+    if right_edge_png:
+        gpt_right = _gpt_extract_dwg_no(
+            right_edge_png,
+            model_name=model_name,
+            area_hint="right_edge_vertical",
+        )
+        if gpt_right.get("ok"):
+            rp = gpt_right.get("parsed") or {}
+            right_dwg = (rp.get("dwg_no") or "").strip() or None
+            right_candidates = [c.strip() for c in (rp.get("candidates") or []) if c and c.strip()]
+            if right_dwg and _is_valid_dwg_candidate(right_dwg):
+                existing = [c["value"] for c in all_candidates]
+                if right_dwg not in existing:
+                    all_candidates.insert(0, {"value": right_dwg, "source": "gpt_primary", "score": 0.0})
+                if not gpt_dwg_no:
+                    gpt_dwg_no = right_dwg
+            for rc in right_candidates:
+                if rc and _is_valid_dwg_candidate(rc):
+                    existing = [c["value"] for c in all_candidates]
+                    if rc not in existing:
+                        all_candidates.append({"value": rc, "source": "gpt_candidate", "score": 0.0})
 
     # ── Step 4: 혼동 문자 보정 후보 생성 ────────────────────────────────
     base_for_correction = gpt_dwg_no or (all_candidates[0]["value"] if all_candidates else None)

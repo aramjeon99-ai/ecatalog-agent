@@ -32,6 +32,13 @@
       "vision_maker_check_attempts": 2,
       "prefer_vision_for_order_code": true
     },
+    "SEW": {
+      "match_names": ["SEW", "SEW-EURODRIVE", "SEW EURODRIVE", "SEW유로드라이브", "에스이더블유", "에스이유"],
+      "notes_ko": "SEW 문서는 본문/표제란에 SEW 또는 EURODRIVE 단독 표기가 많아 둘 다 메이커 근거로 인정.",
+      "extra_text_tokens_for_maker_evidence": ["sew", "eurodrive", "sew-eurodrive"],
+      "prefer_vision_for_order_code": true,
+      "vision_maker_check_attempts": 2
+    },
     "하나기전": {
       "match_names": ["하나기전", "HANA MECHANICAL", "HANA MECHANICAL&ELECTRICAL", "HANA MECHANICAL & ELECTRICAL", "HANA M&E", "HANAMECHANICAL"],
       "notes_ko": "한글 회사명 '하나기전'이 PDF에 표기될 수 있음. 영문명은 HANA MECHANICAL&ELECTRICAL.",

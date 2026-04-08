@@ -111,7 +111,7 @@ _DATA_FILENAMES = {
 _NON_SPEC_COLS: frozenset[str] = frozenset([
     "q-code", "q코드", "qcode", "q_code",
     "그룹사명", "그룹사", "품명", "품목",
-    "model-1", "maker name-1", "maker name",
+    "model-1", "maker-1", "maker name-1", "maker name",
     "정답여부", "국/외산여부", "국외산여부",
     "model-1 첨부url1", "첨부url1",
 ])
@@ -481,16 +481,27 @@ def quick_status_check(
                         pdf_exists = (pdf_base_dir / str(val).strip()).exists()
                     break
 
+    # URL도 없고 PDF도 없으면 제외
     if not pdf_exists:
-        return "자동회송", False
+        # URL 컬럼 확인 (URL만 있는 항목도 검증 대상에 포함)
+        url_exists = False
+        if q_col_master:
+            _mrows = qcode_master_df[qcode_master_df[q_col_master].astype(str).str.strip() == str(q_code).strip()]
+            if len(_mrows) > 0:
+                _url_col = _find_col(qcode_master_df, ["model-1 첨부url1", "첨부url1", "url"])
+                if _url_col:
+                    _uv = _mrows.iloc[0].get(_url_col)
+                    url_exists = bool(_uv and str(_uv).strip().startswith("http"))
+        if not url_exists:
+            return "자동회송", False
 
     # Maker 매칭
     if not q_col_master:
-        return "사람승인", True
+        return "사람승인", pdf_exists
 
     master_rows = qcode_master_df[qcode_master_df[q_col_master].astype(str).str.strip() == str(q_code).strip()]
     if len(master_rows) == 0:
-        return "사람승인", True
+        return "사람승인", pdf_exists
 
     maker_name = _first_non_empty_across_row(
         master_rows.iloc[0],
@@ -508,10 +519,10 @@ def quick_status_check(
     _, similarity = _maker_best_match(maker_name, maker_candidates)
 
     if similarity >= 85.0:
-        return "자동승인", True
+        return "자동승인", pdf_exists
     if similarity > 0:
-        return "사람승인", True
-    return "자동회송", True
+        return "사람승인", pdf_exists
+    return "자동회송", pdf_exists
 
 
 def _extract_model_candidates(pdf_text: str) -> list[str]:
@@ -746,12 +757,43 @@ def run_qcode_validation(
         ctx.pdf_text_sample or "",
         extra_aliases=_extra_maker_tokens,
     )
+    hana_needs_human_review = False
+
+    # 하나기전 예외 처리:
+    # - PDF에 "하나기전"/"HANA MECHANICAL" 표기가 분명하면 목록에서 "하나기전"을 재조회
+    # - 목록 미존재 시 자동회송 대신 웹 검증 후 사람검토(PENDING)로 보낸다.
+    _pdf_text = ctx.pdf_text_sample or ""
+    _pdf_low = _pdf_text.lower()
+    _hana_in_pdf = ("하나기전" in _pdf_text) or ("hana mechanical" in _pdf_low)
+    if not maker_matched and _hana_in_pdf:
+        _hana_norm = normalize_maker("하나기전")
+        _hana_hit = next(
+            (cand for cand in ctx.maker_candidates if normalize_maker(str(cand)) == _hana_norm),
+            None,
+        )
+        if _hana_hit:
+            best_maker = _hana_hit
+            similarity = 100.0
+            maker_matched = True
+        else:
+            hana_needs_human_review = True
+
     pdf_maker_verified = bool(maker_in_pdf)
 
     # maker_catalog_hints에 등록된 메이커는 e-catalog 유사도와 무관하게 인식.
     # PDF 텍스트에서 제조사명(한글 별칭 포함)이 확인되면 maker_matched=True로 보정.
     if not maker_matched and maker_profile and maker_in_pdf:
         maker_matched = True
+
+    # SEW 계열(예: SEW-EURODRIVE) 문서는 본문/표제란에 "SEW", "EURODRIVE"로
+    # 표기되는 경우가 많아 별도 폴백을 둔다.
+    if not maker_matched:
+        _mk_norm = normalize_maker(ctx.maker_name or "")
+        _pdf_low = (ctx.pdf_text_sample or "").lower()
+        _sew_name = ("sew" in _mk_norm) or ("eurodrive" in _mk_norm)
+        _sew_in_pdf = ("sew" in _pdf_low) or ("eurodrive" in _pdf_low)
+        if _sew_name and _sew_in_pdf:
+            maker_matched = True
     vision_result: dict[str, Any] | None = None
     drawing_result: dict[str, Any] | None = None
     maker_hint_relax_reason: str | None = None
@@ -791,7 +833,7 @@ def run_qcode_validation(
             except Exception as e:
                 drawing_result = {"ok": False, "error": str(e)}
         else:
-            # API 키 없음 → PyMuPDF 텍스트 크롭으로 표제란 메이커명 탐색
+            # API 키 없음 → PyMuPDF 텍스트 크롭으로 표제란 + 우상단 로고 영역 탐색
             try:
                 import fitz as _fitz
                 import re as _re
@@ -799,13 +841,17 @@ def run_qcode_validation(
                 _page = _doc.load_page(0)
                 _rect = _page.rect
                 _w, _h = _rect.width, _rect.height
-                # 전체 하단 40% + 좌우 전체
-                _clip = _fitz.Rect(_rect.x0, _rect.y0 + _h * 0.60, _rect.x1, _rect.y1)
-                _tb_text = _page.get_text("text", clip=_clip) or ""
+                # 1) 표제란: 전체 하단 40%
+                _clip_tb = _fitz.Rect(_rect.x0, _rect.y0 + _h * 0.60, _rect.x1, _rect.y1)
+                _tb_text = _page.get_text("text", clip=_clip_tb) or ""
+                # 2) 우상단 로고 영역: 우측 30% x 상단 25%
+                _clip_rt = _fitz.Rect(_rect.x0 + _w * 0.70, _rect.y0, _rect.x1, _rect.y0 + _h * 0.25)
+                _rt_text = _page.get_text("text", clip=_clip_rt) or ""
+                _maker_zone_text = (_tb_text + "\n" + _rt_text).strip()
                 _doc.close()
                 # 등록 메이커 + extra_aliases 탐색
                 _search_targets = [ctx.maker_name or ""] + list(_extra_maker_tokens)
-                _tb_lower = _tb_text.lower()
+                _tb_lower = _maker_zone_text.lower()
                 _found_in_tb = any(
                     (normalize_maker(t) or t.lower()) in _tb_lower
                     for t in _search_targets if t.strip()
@@ -818,7 +864,7 @@ def run_qcode_validation(
                         "drawing_no": None,
                         "drawing_no_matches_model": None,
                         "specs": [],
-                        "reason_ko": "표제란 텍스트에서 제조사명 감지(API 키 없음, PyMuPDF 크롭)",
+                        "reason_ko": "표제란/우상단 로고 영역 텍스트에서 제조사명 감지(API 키 없음, PyMuPDF 크롭)",
                     }
             except Exception:
                 pass
@@ -853,6 +899,7 @@ def run_qcode_validation(
                         _is_same = True
                         break
         if _is_same is True:
+            maker_matched = True
             pdf_maker_verified = True
             state.error_flags = [f for f in state.error_flags if f.code not in ("ERR_NO_LOGO", "ERR_PDF_MAKER_SOURCE")]
         elif _is_same is False and not maker_in_pdf:
@@ -916,6 +963,7 @@ def run_qcode_validation(
             )
         same_doc = vp.get("is_same_manufacturer_document")
         if same_doc is True:
+            maker_matched = True
             pdf_maker_verified = True
             state.error_flags = [f for f in state.error_flags if f.code != "ERR_NO_LOGO"]
         elif same_doc is False and not maker_in_pdf:
@@ -933,6 +981,8 @@ def run_qcode_validation(
     if model_matched:
         state.error_flags = [f for f in state.error_flags if f.code != "ERR_MODEL_MISMATCH"]
     if maker_matched:
+        state.error_flags = [f for f in state.error_flags if f.code != "ERR_MAKER_MISMATCH"]
+    elif hana_needs_human_review:
         state.error_flags = [f for f in state.error_flags if f.code != "ERR_MAKER_MISMATCH"]
     if pdf_maker_verified:
         state.error_flags = [f for f in state.error_flags if f.code != "ERR_PDF_MAKER_SOURCE"]
@@ -958,7 +1008,7 @@ def run_qcode_validation(
                 message="모델명이 사양검증자료(PDF)에서 확인되지 않습니다.",
                 evidence=f"system={ctx.model_name}, pdf_best={model_pdf_val}",
             ))
-    if not maker_matched:
+    if not maker_matched and not hana_needs_human_review:
         already = {f.code for f in state.error_flags}
         if "ERR_MAKER_MISMATCH" not in already:
             state.error_flags.append(ErrorFlag(
@@ -1080,7 +1130,7 @@ def run_qcode_validation(
         final_forced.append("ERR_KNOWN_ERROR_CODE")
     if not model_matched:
         final_forced.append("ERR_MODEL_MISMATCH")
-    if not maker_matched:
+    if not maker_matched and not hana_needs_human_review:
         final_forced.append("ERR_MAKER_MISMATCH")
     # 사양 미입력(9999) 케이스는 PDF 출처 검증 없어도 됨
     if maker_matched and not pdf_maker_verified and not _no_meaningful_specs:
@@ -1112,6 +1162,8 @@ def run_qcode_validation(
         and mfr_verification.get("needs_human_review")
         and mfr_verification.get("maker_type") == "신규공급사"
     ):
+        outcome = "PENDING"
+    if outcome != "REJECTED" and hana_needs_human_review:
         outcome = "PENDING"
 
     # ── 회송 규칙 매핑 ────────────────────────────────────────────────

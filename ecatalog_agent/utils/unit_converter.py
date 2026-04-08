@@ -305,8 +305,12 @@ def compare_spec_values(
         }
     """
     # ── IP 등급 정규화 ('IP55' vs '55' 동일 판정) ──────────────────────
-    sys_ip = _normalize_ip_class(sys_val_str)
-    pdf_ip = _normalize_ip_class(pdf_val_str)
+    # title에 'ip'가 포함되거나, 값 중 하나가 명시적으로 'IP...' 형태일 때만 적용
+    _ip_title = title and "ip" in title.lower()
+    _ip_explicit = re.match(r'^ip\s*\d', sys_val_str.strip(), re.I) or \
+                   re.match(r'^ip\s*\d', pdf_val_str.strip(), re.I)
+    sys_ip = _normalize_ip_class(sys_val_str) if (_ip_title or _ip_explicit) else None
+    pdf_ip = _normalize_ip_class(pdf_val_str) if (_ip_title or _ip_explicit) else None
     if sys_ip is not None and pdf_ip is not None:
         match = "일치" if sys_ip == pdf_ip else "불일치"
         return {
@@ -316,11 +320,24 @@ def compare_spec_values(
             "sys_base": None, "pdf_base": None,
         }
 
+    # ── RPM/Hz 복합 표기 정규화 ('1735/35' vs '1735rpm' → 앞 숫자 비교) ─
+    # 감속비 분기보다 먼저 처리: 1735/35는 감속비가 아니라 rpm/Hz 복합 표기
+    sys_rpm_str = _normalize_rpm_slash(sys_val_str)
+    pdf_rpm_str = _normalize_rpm_slash(pdf_val_str)
+    # 한쪽만 슬래시 표기인 경우도 처리 (1735/35 vs 1735)
+    if sys_rpm_str is not None or pdf_rpm_str is not None:
+        s_str = sys_rpm_str if sys_rpm_str is not None else sys_val_str
+        p_str = pdf_rpm_str if pdf_rpm_str is not None else pdf_val_str
+        inner = compare_spec_values(s_str, p_str, title=title)
+        if inner["match"] in ("일치", "단위변환일치", "범위내"):
+            inner["note"] = f"RPM 복합표기 정규화: {sys_val_str} vs {pdf_val_str} → " + inner["note"]
+        return inner
+
     # ── 감속비 비율 표기 정규화 ('50:1' vs '1:50' vs '1/50') ─────────
+    # 두 값 모두 X:Y 또는 X/Y 패턴이고 비율 차이가 작을 때만 감속비로 판단
     sys_ratio = _parse_ratio(sys_val_str)
     pdf_ratio = _parse_ratio(pdf_val_str)
     if sys_ratio is not None and pdf_ratio is not None:
-        # 두 비율을 각각 정방향/역방향으로 비교 (50:1 ↔ 1:50 둘 다 같은 비율)
         def _ratio_match(a: float, b: float) -> bool:
             if a == 0 or b == 0:
                 return a == b
@@ -332,19 +349,6 @@ def compare_spec_values(
             "sys_parsed": [], "pdf_parsed": [],
             "sys_base": sys_ratio, "pdf_base": pdf_ratio,
         }
-
-    # ── RPM/Hz 복합 표기 정규화 ('1735/35' vs '1735rpm' → 앞 숫자 비교) ─
-    sys_rpm_str = _normalize_rpm_slash(sys_val_str)
-    pdf_rpm_str = _normalize_rpm_slash(pdf_val_str)
-    # 한쪽만 슬래시 표기인 경우도 처리 (1735/35 vs 1735)
-    if sys_rpm_str is not None or pdf_rpm_str is not None:
-        s_str = sys_rpm_str if sys_rpm_str is not None else sys_val_str
-        p_str = pdf_rpm_str if pdf_rpm_str is not None else pdf_val_str
-        # 앞 숫자끼리 재귀 비교 (단위 변환 포함)
-        inner = compare_spec_values(s_str, p_str)
-        if inner["match"] in ("일치", "단위변환일치", "범위내"):
-            inner["note"] = f"RPM 복합표기 정규화: {sys_val_str} vs {pdf_val_str} → " + inner["note"]
-        return inner
 
     sys_parsed = parse_value_with_unit(sys_val_str)
     pdf_parsed = parse_value_with_unit(pdf_val_str)
