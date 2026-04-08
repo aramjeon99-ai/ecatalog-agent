@@ -378,21 +378,29 @@ with st.sidebar:
     system_data_file = st.file_uploader(
         "1_system_data.xlsx", type=["xlsx", "xls"], key="system_data"
     )
+    if system_data_file:
+        st.success(f"✅ '{system_data_file.name}' 업로드됨 — 아래 **데이터 저장** 버튼을 눌러야 반영됩니다.")
 
     st.markdown("**② PDF 매핑 파일** (Q코드 ↔ 첨부파일명)")
     pdf_mapping_file = st.file_uploader(
         "pdf 파일명 Q코드랑 정리.xlsx", type=["xlsx", "xls", "csv"], key="pdf_map"
     )
+    if pdf_mapping_file:
+        st.success(f"✅ '{pdf_mapping_file.name}' 업로드됨 — 저장 버튼 후 반영")
 
     st.markdown("**③ 기준 제조사 목록** (선택)")
     maker_list_file = st.file_uploader(
         "industrial_manufacturers_list.xlsx", type=["xlsx", "xls", "csv"], key="maker"
     )
+    if maker_list_file:
+        st.success(f"✅ '{maker_list_file.name}' 업로드됨 — 저장 버튼 후 반영")
 
     st.markdown("**④ 중복 검사용 기존 데이터** (선택, model_name·maker_name 컬럼 필요)")
     existing_data_file = st.file_uploader(
         "기존data(중복검색용)_system_data_200.xlsx", type=["xlsx", "xls"], key="existing_data"
     )
+    if existing_data_file:
+        st.success(f"✅ '{existing_data_file.name}' 업로드됨 — 저장 버튼 후 반영")
     dup_count = get_duplicate_baseline_count(STREAMLIT_DB_PATH)
     if dup_count > 0:
         st.caption(f"현재 중복 기준 데이터: {dup_count:,}건 적재됨")
@@ -458,15 +466,21 @@ with st.sidebar:
                 },
                 APP_CONFIG_PATH,
             )
-            # 데이터 변경 → 기존 검증 캐시 초기화
+            # 데이터 변경 → 모든 캐시 초기화 (새 파일로 완전 교체)
             st.session_state.pop("validation_results", None)
+            st.session_state.pop("_preload_done", None)
+            st.session_state.pop("_preload_target", None)
+            st.session_state.pop("_preload_idx", None)
+            st.cache_data.clear()  # _compute_statuses 등 @st.cache_data 전부 초기화
+            st.session_state["_just_saved"] = True
             saved_ok = True
             st.rerun()
 
-    if data_loaded and not saved_ok:
-        st.success("데이터 로드됨")
-    elif saved_ok:
-        st.success("저장 완료")
+    if st.session_state.get("_just_saved"):
+        st.success("✅ 저장 완료 — 새 데이터가 반영되었습니다.")
+        st.session_state.pop("_just_saved", None)
+    elif data_loaded and not saved_ok:
+        st.caption("데이터 로드됨")
 
     st.divider()
     if st.button("전체 재검증"):
@@ -708,7 +722,11 @@ def show_validation_dialog(q_code: str) -> None:
     best_maker = judgment.get("best_matched_maker")
     similarity = judgment.get("similarity_score", 0.0)
     expected_specs = judgment.get("expected_specs") or []
-    pdf_file  = judgment.get("connected_pdf_filename") or "없음"
+    _pdf_filenames_all = judgment.get("pdf_filenames_all") or []
+    if _pdf_filenames_all:
+        pdf_file = f"{_pdf_filenames_all[0]}" + (f" 외 {len(_pdf_filenames_all)-1}개" if len(_pdf_filenames_all) > 1 else "")
+    else:
+        pdf_file = judgment.get("connected_pdf_filename") or "없음"
 
     model_matched  = judgment.get("model_matched")
     maker_matched  = bool(judgment.get("maker_matched"))
@@ -1175,7 +1193,7 @@ for q in qcodes_with_pdf:
     rows = qcode_master_df[qcode_master_df[_q_col_summary].astype(str).str.strip() == q]
     r = rows.iloc[0] if len(rows) > 0 else None
     result = st.session_state["validation_results"].get(q)
-    outcome = result["outcome"] if result else None
+    outcome = result.get("outcome") if result else None
     summary_rows.append({
         "Q-Code": q,
         "품명":   (r[_품명_col]  if r is not None and _품명_col  else "") or "",

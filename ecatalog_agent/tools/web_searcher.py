@@ -15,7 +15,7 @@ import requests
 from duckduckgo_search import DDGS
 
 # ── 상수 ──────────────────────────────────────────────────────────────
-_TIMEOUT_S   = 10
+_TIMEOUT_S   = 6
 _MAX_PDF_MB  = 10
 _MAX_RESULTS = 5
 _PDF_PAGES   = 5        # 다운로드 PDF에서 읽을 최대 페이지

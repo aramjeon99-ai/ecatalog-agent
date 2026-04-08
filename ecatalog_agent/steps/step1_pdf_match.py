@@ -16,12 +16,17 @@ def step1_pdf_parse_and_match(
     *,
     fuzzy_model_threshold: float = 0.90,
     fuzzy_maker_threshold: float = 0.85,
+    pre_parsed_text: str = "",  # 이미 파싱된 텍스트 — 전달 시 pdf_parse 생략
 ) -> tuple[StepResult, dict[str, Any]]:
     start = time.time()
     flags: list[ErrorFlag] = []
 
-    parsed = pdf_parse(record.pdf_path)
-    text = parsed.get("text", "") or ""
+    parsed: dict = {}
+    if pre_parsed_text:
+        text = pre_parsed_text
+    else:
+        parsed = pdf_parse(record.pdf_path)
+        text = parsed.get("text", "") or ""
 
     model_norm = normalize_model(record.model_name)
     maker_norm = normalize_maker(record.maker_name)

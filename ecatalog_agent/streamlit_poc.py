@@ -196,12 +196,14 @@ class QcodeContext:
     q_code: str
     maker_name: str | None
     model_name: str
-    pdf_filename: str | None
-    pdf_path: str | None
-    pdf_exists: bool
+    pdf_filename: str | None        # 첫 번째 PDF (하위 호환)
+    pdf_path: str | None            # 첫 번째 PDF 경로 (하위 호환)
+    pdf_exists: bool                # 첫 번째 PDF 존재 여부 (하위 호환)
+    pdf_filenames: list[str]        # 모든 PDF 파일명 목록
+    pdf_paths: list[str]            # 존재하는 PDF 경로 전체
     maker_candidates: list[str]
     expected_specs: list[dict[str, str]]
-    pdf_text_sample: str
+    pdf_text_sample: str            # 모든 PDF 텍스트 합본
     url_value: str | None          # Model-1 첨부URL1 컬럼값
     maker_homepage_url: str | None # 메이커 홈페이지 URL (3단계 검증용)
     judgment: dict[str, Any]
@@ -306,30 +308,36 @@ def get_qcode_context(
         )
         catalog_model_name = _model_name_from_master_row(master_row, str(q_code).strip())
 
-    pdf_filename_col = _find_col(pdf_mapping_df, ["pdf", "pdf 파일", "첨부파일명", "file", "파일", "pdf_filename", "pdf명"])
-    if not pdf_filename_col:
-        # try substring search
-        for c in pdf_mapping_df.columns:
-            if "첨부" in str(c) and "파일" in str(c):
-                pdf_filename_col = c
-                break
-    pdf_filename: str | None = None
-    if len(pdf_rows) > 0:
-        row_pdf = pdf_rows.iloc[0]
-        if pdf_filename_col and pdf_filename_col in row_pdf:
-            pdf_filename = row_pdf.get(pdf_filename_col)
-        else:
-            # take first col containing 'pdf' or '첨부' and not-empty
-            candidates = [c for c in pdf_rows.columns if ("pdf" in str(c).lower()) or ("첨부" in str(c) and "파일" in str(c))]
-            pdf_filename = _first_non_empty_across_row(row_pdf, candidates)
-    if pdf_filename is not None and (str(pdf_filename).strip() == "" or str(pdf_filename).strip().lower() == "nan"):
-        pdf_filename = None
+    # ── 다중 PDF 파일 수집 ──────────────────────────────────────────────
+    # pdf_mapping 내 모든 파일명 컬럼(첨부파일명, 첨부파일명2 등) + 동일 Q-Code 여러 행 모두 수집
+    _pdf_file_cols = []
+    for c in pdf_mapping_df.columns:
+        cl = str(c).lower()
+        if ("첨부" in cl and "파일" in cl) or "pdf" in cl or cl in ("file", "파일", "pdf_filename", "pdf명"):
+            _pdf_file_cols.append(c)
+    if not _pdf_file_cols:
+        _pdf_file_cols = [c for c in pdf_mapping_df.columns if ("pdf" in str(c).lower())]
 
-    pdf_path = None
-    pdf_exists = False
-    if pdf_filename:
-        pdf_path = str(pdf_base_dir / str(pdf_filename).strip())
-        pdf_exists = os.path.exists(pdf_path)
+    _all_pdf_filenames: list[str] = []
+    for _, _row in pdf_rows.iterrows():
+        for _col in _pdf_file_cols:
+            _v = _row.get(_col)
+            if _v and str(_v).strip() and str(_v).strip().lower() != "nan":
+                _fn = str(_v).strip()
+                if _fn not in _all_pdf_filenames:
+                    _all_pdf_filenames.append(_fn)
+
+    # 존재하는 PDF 경로만 필터
+    _all_pdf_paths = [
+        str(pdf_base_dir / fn)
+        for fn in _all_pdf_filenames
+        if os.path.exists(str(pdf_base_dir / fn))
+    ]
+
+    # 하위 호환: 첫 번째 PDF
+    pdf_filename: str | None = _all_pdf_filenames[0] if _all_pdf_filenames else None
+    pdf_path: str | None = _all_pdf_paths[0] if _all_pdf_paths else None
+    pdf_exists: bool = bool(_all_pdf_paths)
 
     # Parse expected specs from spec_detail sheet.
     expected_specs: list[dict[str, str]] = []
@@ -395,16 +403,17 @@ def get_qcode_context(
             if len(expected_specs) >= 30:
                 break
 
-    # PDF text for evidence (사양 존재 여부 확인용으로 전체 텍스트 보관)
+    # PDF text for evidence — 모든 PDF 텍스트 합본
     pdf_text_sample = ""
-    if pdf_path and pdf_exists:
+    for _pp in _all_pdf_paths:
         try:
-            parsed = pdf_parse(pdf_path, use_ocr=False)
-            # 형번 표는 뒤쪽 페이지에만 있을 수 있음 — 전체 추출본 사용(상한만 둠)
-            full_txt = parsed.get("text") or ""
-            pdf_text_sample = full_txt[:500000]
+            _parsed = pdf_parse(_pp, use_ocr=False)
+            _txt = (_parsed.get("text") or "")[:500000]
+            if _txt:
+                pdf_text_sample = (pdf_text_sample + "\n\n" + _txt).strip()
         except Exception:
-            pdf_text_sample = ""
+            pass
+    pdf_text_sample = pdf_text_sample[:500000]
 
     # Placeholder; actual validation runs in run_qcode_validation.
     dummy_judgment: dict[str, Any] = {}
@@ -418,6 +427,8 @@ def get_qcode_context(
         pdf_filename=pdf_filename,
         pdf_path=pdf_path,
         pdf_exists=pdf_exists,
+        pdf_filenames=_all_pdf_filenames,
+        pdf_paths=_all_pdf_paths,
         maker_candidates=maker_candidates,
         expected_specs=expected_specs,
         pdf_text_sample=pdf_text_sample,
@@ -468,18 +479,21 @@ def quick_status_check(
     q_col_master = _find_col(qcode_master_df, ["q-code", "q코드", "qcode", "Q-Code", "q_code"])
     q_col_pdf    = _find_col(pdf_mapping_df,   ["q-code", "q코드", "qcode", "Q-Code", "q_code"])
 
-    # PDF 존재 여부
+    # PDF 존재 여부 — 모든 행, 모든 파일 컬럼 확인 (다중 PDF 지원)
     pdf_exists = False
     if q_col_pdf:
         pdf_rows = pdf_mapping_df[pdf_mapping_df[q_col_pdf].astype(str).str.strip() == str(q_code).strip()]
-        if len(pdf_rows) > 0:
-            row = pdf_rows.iloc[0]
-            for c in pdf_rows.columns:
-                if "첨부" in str(c) and "파일" in str(c):
-                    val = row.get(c)
-                    if val and str(val).strip() and str(val).strip().lower() != "nan":
-                        pdf_exists = (pdf_base_dir / str(val).strip()).exists()
-                    break
+        _file_cols = [c for c in pdf_rows.columns
+                      if ("첨부" in str(c) and "파일" in str(c)) or "pdf" in str(c).lower()]
+        for _, _row in pdf_rows.iterrows():
+            for c in _file_cols:
+                val = _row.get(c)
+                if val and str(val).strip() and str(val).strip().lower() != "nan":
+                    if (pdf_base_dir / str(val).strip()).exists():
+                        pdf_exists = True
+                        break
+            if pdf_exists:
+                break
 
     # URL도 없고 PDF도 없으면 제외
     if not pdf_exists:
@@ -712,6 +726,7 @@ def run_qcode_validation(
         db_path=STREAMLIT_DB_PATH,
         output_dir=STREAMLIT_OUTPUT_DIR,
         manufacturer_names=manufacturer_names,
+        pre_parsed_pdf_text=ctx.pdf_text_sample or "",  # 이미 파싱된 텍스트 재활용
     )
 
     fd = state.final_decision
@@ -812,21 +827,20 @@ def run_qcode_validation(
     # ── 도면 형식 감지 → 도면 전용 Vision 2-pass ─────────────────────
     from ecatalog_agent.tools.vision_order_code import is_drawing_document, run_drawing_validation
 
-    # 도면 여부 판단은 API 키 없이도 수행 (무료 텍스트/파일명 기반)
-    _is_drawing = bool(
-        ctx.pdf_path
-        and ctx.pdf_exists
-        and is_drawing_document(
-            str(ctx.pdf_path),
-            ctx.pdf_text_sample or "",
-            pdf_filename=ctx.pdf_filename or "",
-        )
-    )
+    # 다중 PDF: 어떤 파일이 도면인지 탐색 (첫 번째 도면 사용)
+    _drawing_pdf_path: str | None = None
+    _drawing_pdf_filename: str | None = None
+    for _pp, _fn in zip(ctx.pdf_paths or [ctx.pdf_path or ""], ctx.pdf_filenames or [ctx.pdf_filename or ""]):
+        if _pp and is_drawing_document(_pp, ctx.pdf_text_sample or "", pdf_filename=_fn or ""):
+            _drawing_pdf_path = _pp
+            _drawing_pdf_filename = _fn
+            break
+    _is_drawing = bool(_drawing_pdf_path)
     if _is_drawing:
         if _api_key:
             try:
                 drawing_result = run_drawing_validation(
-                    pdf_path=str(ctx.pdf_path),
+                    pdf_path=str(_drawing_pdf_path),
                     maker_name=(ctx.maker_name or "").strip(),
                     model_name=(ctx.model_name or "").strip(),
                 )
@@ -837,7 +851,7 @@ def run_qcode_validation(
             try:
                 import fitz as _fitz
                 import re as _re
-                _doc = _fitz.open(str(ctx.pdf_path))
+                _doc = _fitz.open(str(_drawing_pdf_path))
                 _page = _doc.load_page(0)
                 _rect = _page.rect
                 _w, _h = _rect.width, _rect.height
@@ -906,8 +920,7 @@ def run_qcode_validation(
             pdf_maker_verified = False
 
     _should_run_vision = bool(
-        ctx.pdf_path
-        and ctx.pdf_exists
+        ctx.pdf_paths
         and _api_key
         and not _is_drawing  # 도면은 drawing_result로 처리했으므로 중복 호출 방지
         and (
@@ -920,37 +933,41 @@ def run_qcode_validation(
         )
     )
     if _should_run_vision:
-        try:
-            vision_result = run_pdf_vision_validation(
-                pdf_path=str(ctx.pdf_path),
-                pdf_full_text=ctx.pdf_text_sample or "",
-                maker_name=(ctx.maker_name or "").strip(),
-                model_name=(ctx.model_name or "").strip(),
-                extra_order_code_keywords=_extra_oc_kw,
-                maker_logo_hint=_maker_logo_hint,
-            )
-            # 메이커 로고/회사명 확인은 재시도 허용(최대 N회).
-            # 1차 결과에서 제조사 동일 문서 판단이 확정되지 않으면 한 번 더 확인한다.
-            for _ in range(_vision_maker_check_attempts - 1):
-                vp_try = (vision_result or {}).get("parsed") if isinstance(vision_result, dict) else None
-                same_doc_try = vp_try.get("is_same_manufacturer_document") if isinstance(vp_try, dict) else None
-                if same_doc_try is True:
-                    break
-                retry_result = run_pdf_vision_validation(
-                    pdf_path=str(ctx.pdf_path),
+        # 다중 PDF: 모든 PDF에 대해 Vision 실행, 하나라도 확인되면 통과
+        for _vp_path in ctx.pdf_paths:
+            try:
+                vision_result = run_pdf_vision_validation(
+                    pdf_path=str(_vp_path),
                     pdf_full_text=ctx.pdf_text_sample or "",
                     maker_name=(ctx.maker_name or "").strip(),
                     model_name=(ctx.model_name or "").strip(),
                     extra_order_code_keywords=_extra_oc_kw,
                     maker_logo_hint=_maker_logo_hint,
                 )
-                if retry_result.get("ok") and isinstance(retry_result.get("parsed"), dict):
-                    rp = retry_result["parsed"]
-                    if rp.get("is_same_manufacturer_document") is True:
-                        vision_result = retry_result
+                # 재시도
+                for _ in range(_vision_maker_check_attempts - 1):
+                    vp_try = (vision_result or {}).get("parsed") if isinstance(vision_result, dict) else None
+                    same_doc_try = vp_try.get("is_same_manufacturer_document") if isinstance(vp_try, dict) else None
+                    if same_doc_try is True:
                         break
-        except Exception as e:
-            vision_result = {"ok": False, "error": str(e)}
+                    retry_result = run_pdf_vision_validation(
+                        pdf_path=str(_vp_path),
+                        pdf_full_text=ctx.pdf_text_sample or "",
+                        maker_name=(ctx.maker_name or "").strip(),
+                        model_name=(ctx.model_name or "").strip(),
+                        extra_order_code_keywords=_extra_oc_kw,
+                        maker_logo_hint=_maker_logo_hint,
+                    )
+                    if retry_result.get("ok") and isinstance(retry_result.get("parsed"), dict):
+                        if retry_result["parsed"].get("is_same_manufacturer_document") is True:
+                            vision_result = retry_result
+                            break
+                # 하나라도 확인되면 더 이상 시도 불필요
+                _vp = (vision_result or {}).get("parsed") if isinstance(vision_result, dict) else None
+                if isinstance(_vp, dict) and _vp.get("is_same_manufacturer_document") is True:
+                    break
+            except Exception as e:
+                vision_result = {"ok": False, "error": str(e)}
 
     if vision_result and vision_result.get("ok") and isinstance(vision_result.get("parsed"), dict):
         vp = vision_result["parsed"]
@@ -1029,67 +1046,87 @@ def run_qcode_validation(
                 evidence=f"maker_in_pdf_text={maker_in_pdf}, vision_ok={bool(vision_result and vision_result.get('ok'))}",
             ))
 
-    # ── 제조업 여부 3단계 검증 ────────────────────────────────────────
-    try:
-        from ecatalog_agent.tools.manufacturer_verifier import verify_manufacturer
-        mfr_verification = verify_manufacturer(
-            ctx.maker_name or "",
-            is_in_list=maker_matched,
-            homepage_url=ctx.maker_homepage_url,
-        )
-    except Exception:
-        mfr_verification = None
+    # ── 제조업·웹검색·URL fetch 병렬 실행 ───────────────────────────────
+    import concurrent.futures as _cf
 
-    # ── 웹 검색 2차 검증 (모델 불일치, 옵션 미확인, 또는 메이커 불일치 시) ──
     _option_uncertain = "앞부분일치" in model_pdf_val and "옵션미확인" in model_pdf_val
-    # 앞부분만 일치(옵션코드 미확인) → 웹/비전으로 해소 전까지 불일치로 처리
     if _option_uncertain:
         model_matched = False
+
+    _need_web = not model_matched or not maker_matched or _option_uncertain
+    _need_url = bool(ctx.url_value)  # URL은 항상 시도 (API 키 무관하게 HTML 가져올 수 있음)
+
+    mfr_verification: dict[str, Any] | None = None
     web_result: dict[str, Any] | None = None
-    if not model_matched or not maker_matched or _option_uncertain:
+    url_spec_result: dict[str, Any] | None = None
+
+    def _run_mfr():
+        try:
+            from ecatalog_agent.tools.manufacturer_verifier import verify_manufacturer
+            # hints로 이미 확인된 메이커 → 기존 제조업으로 바로 처리 (DuckDuckGo 생략)
+            _is_in_list = maker_matched or bool(maker_profile)
+            return verify_manufacturer(
+                ctx.maker_name or "",
+                is_in_list=_is_in_list,
+                homepage_url=ctx.maker_homepage_url,
+            )
+        except Exception:
+            return None
+
+    def _run_web():
+        if not _need_web:
+            return None
         try:
             from ecatalog_agent.tools.web_searcher import web_search_verify
-            web_result = web_search_verify(
+            return web_search_verify(
                 ctx.maker_name or "",
                 ctx.model_name,
                 norm_model_fn=_norm_model,
                 check_model_fn=check_model_match,
                 expected_specs=ctx.expected_specs,
             )
-            # 웹에서 모델 확인 → 모델 불일치 해소
-            if not model_matched and web_result.get("model_found_online"):
-                model_matched = True
-                model_pdf_val = (
-                    f"웹 확인: {web_result['matched_pdf_url']}"
-                    if web_result.get("matched_pdf_url")
-                    else "웹 검색 결과에서 확인됨"
-                )
-                state.error_flags = [f for f in state.error_flags if f.code != "ERR_MODEL_MISMATCH"]
         except Exception:
-            web_result = None
+            return None
 
-    # ── URL 크롤링 사양 비교 (시스템 데이터 URL이 있는 경우) ─────────────────
-    url_spec_result: dict[str, Any] | None = None
-    if ctx.url_value and _api_key:
+    def _run_url():
+        if not _need_url or not _api_key:
+            return None
         try:
             from ecatalog_agent.tools.url_spec_fetcher import fetch_url_and_compare_specs
-            url_spec_result = fetch_url_and_compare_specs(
+            return fetch_url_and_compare_specs(
                 url=ctx.url_value,
                 maker_name=(ctx.maker_name or ""),
                 model_name=(ctx.model_name or ""),
                 expected_specs=ctx.expected_specs,
             )
-            # URL에서 모델 확인 → 불일치 해소
-            if url_spec_result.get("ok") and url_spec_result.get("url_type") != "SKIPPED":
-                if url_spec_result.get("model_found") is True and not model_matched:
-                    model_matched = True
-                    model_pdf_val = f"URL 확인: {ctx.url_value}"
-                    state.error_flags = [f for f in state.error_flags if f.code != "ERR_MODEL_MISMATCH"]
-                # maker_confirmed from URL is intentionally NOT used for pdf_maker_verified.
-                # URL may be a distributor/reseller site (e.g. famotor.co.kr), not the maker's own domain.
-                # Manufacturer name must be confirmed from the attached PDF or system data only.
         except Exception as _e:
-            url_spec_result = {"ok": False, "error": str(_e)}
+            return {"ok": False, "error": str(_e)}
+
+    with _cf.ThreadPoolExecutor(max_workers=3) as _pool:
+        _f_mfr = _pool.submit(_run_mfr)
+        _f_web = _pool.submit(_run_web)
+        _f_url = _pool.submit(_run_url)
+        mfr_verification  = _f_mfr.result()
+        web_result        = _f_web.result()
+        url_spec_result   = _f_url.result()
+
+    # 웹에서 모델 확인 → 모델 불일치 해소
+    if web_result and not model_matched and web_result.get("model_found_online"):
+        model_matched = True
+        model_pdf_val = (
+            f"웹 확인: {web_result['matched_pdf_url']}"
+            if web_result.get("matched_pdf_url")
+            else "웹 검색 결과에서 확인됨"
+        )
+        state.error_flags = [f for f in state.error_flags if f.code != "ERR_MODEL_MISMATCH"]
+
+    # ── URL 결과 후처리 (모델 불일치 해소) ───────────────────────────────
+    if url_spec_result and url_spec_result.get("ok") and url_spec_result.get("url_type") != "SKIPPED":
+        if url_spec_result.get("model_found") is True and not model_matched:
+            model_matched = True
+            model_pdf_val = f"URL 확인: {ctx.url_value}"
+            state.error_flags = [f for f in state.error_flags if f.code != "ERR_MODEL_MISMATCH"]
+        # maker_confirmed from URL is intentionally NOT used for pdf_maker_verified.
 
     # ── 사전 판별 ───────────────────────────────────────────────────────────
     # 절대 제거하지 않을 에러 코드 (PDF/사양 확인과 무관하게 항상 차단)
@@ -1268,6 +1305,7 @@ def run_qcode_validation(
         "model_name": ctx.model_name,
         "maker_name": ctx.maker_name,
         "connected_pdf_filename": ctx.pdf_filename,
+        "pdf_filenames_all": ctx.pdf_filenames,
         "pdf_exists": ctx.pdf_exists,
         "best_matched_maker": best_maker,
         "similarity_score": similarity,

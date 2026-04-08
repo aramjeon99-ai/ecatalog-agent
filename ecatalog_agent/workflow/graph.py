@@ -25,6 +25,7 @@ def run_agent_for_record(
     db_path: str | Path,
     output_dir: str | Path,
     manufacturer_names: set[str],
+    pre_parsed_pdf_text: str = "",   # 이미 파싱된 텍스트 전달 시 step1 재파싱 생략
 ) -> AgentState:
     state = AgentState(record=record)
 
@@ -38,8 +39,10 @@ def run_agent_for_record(
     if state.step0_result.flags_raised and _is_step0_critical(state.step0_result.flags_raised):
         step_results_for_decision = [state.step0_result] + [None] * 5
     else:
-        # STEP 1
-        state.step1_result, parsed_evidence = step1_pdf_parse_and_match(record)
+        # STEP 1 — pre_parsed_pdf_text가 있으면 재파싱 생략
+        state.step1_result, parsed_evidence = step1_pdf_parse_and_match(
+            record, pre_parsed_text=pre_parsed_pdf_text
+        )
         state.error_flags.extend(state.step1_result.flags_raised)
         pdf_text_sample = parsed_evidence.get("pdf_text_sample", "") or ""
 

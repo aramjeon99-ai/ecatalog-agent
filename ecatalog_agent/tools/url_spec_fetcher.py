@@ -35,7 +35,7 @@ def _is_pdf_url(url: str) -> bool:
 
 # ── PDF URL 처리 ─────────────────────────────────────────────────────────────
 
-def _fetch_pdf_text(url: str, timeout: int = 20) -> str | None:
+def _fetch_pdf_text(url: str, timeout: int = 8) -> str | None:
     """PDF URL에서 텍스트를 추출한다. 실패 시 None."""
     try:
         import requests
@@ -71,7 +71,7 @@ def _fetch_pdf_text(url: str, timeout: int = 20) -> str | None:
         return None
 
 
-def _fetch_pdf_images(url: str, timeout: int = 20, zoom: float = 1.5) -> list[bytes]:
+def _fetch_pdf_images(url: str, timeout: int = 8, zoom: float = 1.5) -> list[bytes]:
     """PDF URL의 첫 4페이지를 PNG로 렌더링한다."""
     try:
         import requests

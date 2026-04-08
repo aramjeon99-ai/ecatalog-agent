@@ -41,8 +41,48 @@
     },
     "하나기전": {
       "match_names": ["하나기전", "HANA MECHANICAL", "HANA MECHANICAL&ELECTRICAL", "HANA MECHANICAL & ELECTRICAL", "HANA M&E", "HANAMECHANICAL"],
-      "notes_ko": "한글 회사명 '하나기전'이 PDF에 표기될 수 있음. 영문명은 HANA MECHANICAL&ELECTRICAL.",
-      "extra_text_tokens_for_maker_evidence": ["하나기전", "hana mechanical", "hana m&e", "hanamechanical"]
+      "notes_ko": "하나기전 문서는 외형 도면 중심. 모델명은 도면 오른쪽 테두리(외곽 영역)에 작게 기재됨. 도면 우측 하단 SPECIFICATION 표(MOTOR/REDUCTION RATIO/POWER SOURCE/MAKER)는 사양 확인용.",
+      "extra_text_tokens_for_maker_evidence": ["하나기전", "hana mechanical", "hana m&e", "hanamechanical"],
+      "prefer_vision_for_order_code": true,
+      "vision_logo_hint_ko": "모델명은 도면 오른쪽 테두리(외곽 영역)에 작게 기재됩니다. 도면 중앙이나 표 안이 아닌 우측 가장자리를 우선 확인하세요."
+    },
+    "삼화DSP": {
+      "match_names": ["삼화DSP", "삼화디에스피", "SAM WHA DSP", "SAMWHADSP", "SAMHWA DSP", "SAMHWADSP", "삼화"],
+      "notes_ko": "삼화DSP 문서는 7번째 페이지의 'Reference code / Order code' 영역을 우선 탐색. 모델명이 DSP-AOM-10-Z-7-ZCT-A-T-LF처럼 DIV 테이블 기반 코드 조합 형태로 정의됨. 단순 문자열이 아니라 구조화된 코드 체계로 인식.",
+      "extra_text_tokens_for_maker_evidence": ["삼화", "samhwa", "sam wha", "samwhadsp", "dsp"],
+      "prefer_vision_for_order_code": true,
+      "extra_order_code_page_keywords": ["reference code", "order code", "dsp-aom", "div"]
+    },
+    "KCC": {
+      "match_names": ["KCC", "KCC실린더", "KCC CYLINDER"],
+      "notes_ko": "KCC 형번 페이지 신호: '형식기호' + 번호구조(①②③...) + 하이픈(-) 연결 모델 3개 동시 등장. ACM-N-B80-S100J 형태. 각 번호=형번의 한 자리 의미(①시리즈 ②급유형식 ④내경 ⑤행정). 코드→의미 매핑 테이블 존재.",
+      "extra_text_tokens_for_maker_evidence": ["kcc", "형식기호", "acm"],
+      "extra_order_code_page_keywords": ["형식기호", "내경", "행정", "급유형식", "acm"]
+    },
+    "JEIL": {
+      "match_names": ["JEIL", "JEIL REDUCER", "제일감속기", "제일"],
+      "notes_ko": "JEIL REDUCER 문서는 외형도면 기반. 1순위: 도면 오른쪽 하단 DWG/TITLE 영역(DWG NO., TITLE, 모델명). 2순위: 도면 하단 네모 사양표(GEARED MOTOR SPECIFICATION - POWER/POLE/VOLTS/HZ/RATIO/PROTECTION/INS.CLASS).",
+      "extra_text_tokens_for_maker_evidence": ["jeil", "제일", "geared motor specification"],
+      "prefer_vision_for_order_code": true,
+      "vision_logo_hint_ko": "JEIL REDUCER 문서는 도면 오른쪽 하단 DWG NO./TITLE 영역에서 모델명을 찾으세요. 예: 40HP6P15-BT2200 형태의 영문+숫자 조합."
+    },
+    "LS산전": {
+      "match_names": ["LS산전", "LS ELECTRIC", "LS전자", "엘에스산전", "LS", "DMPi"],
+      "notes_ko": "LS ELECTRIC 문서에서 'DMPi Series' 확인 시, 메이커=LS산전, DMPi=제품 시리즈. 약 9페이지 '정격 및 형명체계' 페이지 우선 탐색.",
+      "extra_text_tokens_for_maker_evidence": ["ls electric", "ls산전", "dmpi", "엘에스"],
+      "extra_order_code_page_keywords": ["정격 및 형명체계", "dmpi", "order code", "reference code"]
+    },
+    "운영": {
+      "match_names": ["운영", "WOONYOUNG", "운영전기", "WOONYOUNG ELECTRIC"],
+      "notes_ko": "운영(WOONYOUNG) 문서는 제2장 Specification 구간 집중(6번째 페이지 이후). TYPE/Circuit/Power supply voltage/Rated frequency/Current setting range/Operating Time/Reset/Buzzer/Contact capacity/ZCT Input 정보 포함.",
+      "extra_text_tokens_for_maker_evidence": ["운영", "woonyoung"],
+      "extra_order_code_page_keywords": ["제2장", "specification", "current setting range", "zct"]
+    },
+    "경보": {
+      "match_names": ["경보", "경보전기", "KYONGBO", "KYONGBO ELECTRIC"],
+      "notes_ko": "경보전기(KYONGBO) 문서는 Order Code/형번 체계 페이지 없음. TYPE 항목에 모델 직접 명시(예: GD12-L05A / GD12-L05R). 문서 전체에 동일 모델 반복.",
+      "extra_text_tokens_for_maker_evidence": ["경보전기", "kyongbo", "경보"],
+      "extra_order_code_page_keywords": ["type", "gd12"]
     }
   }
 }
