@@ -33,6 +33,67 @@ from ecatalog_agent.db.logger import load_duplicate_baseline, get_duplicate_base
 
 st.set_page_config(page_title="POSCO MRO e-Catalog 검증", layout="wide", page_icon="🏭")
 
+# ── 글로벌 스타일 ─────────────────────────────────────────────────────────────
+st.markdown("""
+<style>
+@import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
+
+/* 전체 폰트 — Streamlit 아이콘 폰트는 제외 */
+html, body { font-family: 'Pretendard', 'Noto Sans KR', sans-serif !important; }
+p, div, input, button, label, h1, h2, h3, h4, h5, h6,
+.stMarkdown, [data-testid="stMarkdownContainer"] {
+    font-family: 'Pretendard', 'Noto Sans KR', sans-serif !important;
+}
+/* Material Symbols(아이콘) 폰트 보호 */
+[data-testid="stExpanderToggleIcon"],
+[data-testid="stExpander"] summary span:first-child,
+span.material-symbols-rounded,
+span.material-icons,
+[class*="Icon"], [class*="icon-"] {
+    font-family: 'Material Symbols Rounded', 'Material Icons', sans-serif !important;
+    font-style: normal !important;
+    font-weight: normal !important;
+    line-height: 1 !important;
+    letter-spacing: normal !important;
+    text-transform: none !important;
+    white-space: nowrap !important;
+    display: inline-block !important;
+    -webkit-font-smoothing: antialiased !important;
+}
+
+/* 사이드바 텍스트 — 다크 배경이므로 밝게 */
+section[data-testid="stSidebar"] p,
+section[data-testid="stSidebar"] span,
+section[data-testid="stSidebar"] label,
+section[data-testid="stSidebar"] div {
+    color: #e2e8f0 !important;
+}
+
+/* 메트릭 카드 */
+[data-testid="metric-container"] {
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    padding: 1rem 1.2rem;
+}
+
+/* 뱃지 */
+.badge-approved { background:#dcfce7; color:#166534; padding:2px 10px; border-radius:20px; font-size:0.78rem; font-weight:600; }
+.badge-rejected { background:#fee2e2; color:#991b1b; padding:2px 10px; border-radius:20px; font-size:0.78rem; font-weight:600; }
+.badge-pending  { background:#fef9c3; color:#854d0e; padding:2px 10px; border-radius:20px; font-size:0.78rem; font-weight:600; }
+.badge-skipped  { background:#f1f5f9; color:#64748b; padding:2px 10px; border-radius:20px; font-size:0.78rem; font-weight:500; }
+</style>
+""", unsafe_allow_html=True)
+
+def render_badge(outcome: str) -> str:
+    cls = {
+        "APPROVED": "badge-approved",
+        "REJECTED": "badge-rejected",
+        "PENDING" : "badge-pending",
+    }.get(outcome, "badge-pending")
+    label = {"APPROVED": "승인", "REJECTED": "반려", "PENDING": "검토중"}.get(outcome, outcome)
+    return f'<span class="{cls}">{label}</span>'
+
 # ── 업로드 파일 중복 제거 유틸 ───────────────────────────────────────────────
 
 _QCODE_KEYS = {"qcode", "q코드", "q-code", "q_code"}
@@ -120,7 +181,7 @@ st.markdown("""
 }
 
 /* 사이드바 내 모든 텍스트 — 어두운 색 */
-[data-testid="stSidebar"] * { color: #1e293b !important; }
+[data-testid="stSidebar"] * { color: #e2e8f0 !important; }
 
 /* 섹션 라벨 (①②③④) */
 [data-testid="stSidebar"] .stMarkdown p,
@@ -150,6 +211,7 @@ st.markdown("""
     padding: 8px;
 }
 [data-testid="stSidebar"] [data-testid="stFileUploader"] * { color: #1e293b !important; }
+[data-testid="stSidebar"] [data-testid="stFileUploader"] label { color: #e2e8f0 !important; }
 [data-testid="stSidebar"] [data-testid="stFileUploader"] button {
     background: #003087 !important;
     color: #fff !important;
@@ -295,12 +357,11 @@ st.markdown("""
     border-radius: 6px 6px 0 0;
 }
 
-/* ── expander ── */
-.streamlit-expanderHeader {
+/* ── expander (Streamlit 1.x) ── */
+[data-testid="stExpander"] {
     background: #eef3fb !important;
     border-radius: 6px !important;
-    font-weight: 600 !important;
-    color: #003087 !important;
+    border: 1px solid #d0dff5 !important;
 }
 
 /* ── 상단 패딩 조정 ── */
@@ -359,6 +420,8 @@ with st.sidebar:
     # 사전 검증 진행 상황 — 최상단 고정 (아래 로직에서 업데이트)
     _preload_status_slot = st.empty()
     _preload_bar_slot    = st.empty()
+    _full_validate_status_slot = st.empty()
+    _full_validate_bar_slot = st.empty()
     st.markdown("""
 <div class="sidebar-header">
   <div class="sb-brand">POSCO</div>
@@ -754,8 +817,7 @@ def show_validation_dialog(q_code: str) -> None:
     step4_conf   = step4.confidence if step4 else 0.0
 
     # ── 종합 판단 배너 ──────────────────────────────────────────────
-    color = {"APPROVED": "green", "REJECTED": "red", "PENDING": "orange"}.get(outcome, "gray")
-    st.markdown(f"### 종합 판단: :{color}[**{outcome}**]")
+    st.markdown(f"### 종합 판단 &nbsp; {render_badge(outcome)}", unsafe_allow_html=True)
     st.caption(result.get("summary", ""))
     st.divider()
 
@@ -1048,7 +1110,7 @@ def show_validation_dialog(q_code: str) -> None:
     active_rules  = judgment.get("active_rules") or []
 
     with st.container(border=True):
-        st.markdown(f"**결과: :{color}[{outcome}]**")
+        st.markdown(f"**결과:** {render_badge(outcome)}", unsafe_allow_html=True)
         st.markdown(f"- 주요 사양 일치: **{overall_label}**")
         st.markdown(
             f"- 제조업 여부: **{step4_status}** "
@@ -1215,6 +1277,32 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
+_fv_running = bool(st.session_state.get("_full_validate_target"))
+fv1, fv2, fv3 = st.columns([2, 2, 6])
+with fv1:
+    if st.button(
+        "🚀 목록 전체 일괄 검증",
+        type="primary",
+        help="현재 목록의 모든 Q코드를 순차 검증합니다. OpenAI/웹 검색이 있으면 시간이 걸릴 수 있습니다.",
+        disabled=_fv_running,
+    ):
+        st.session_state["_full_validate_target"] = list(qcodes_with_pdf)
+        st.session_state["_full_validate_idx"] = 0
+        st.rerun()
+with fv2:
+    if st.button("⏹ 일괄 검증 중단", disabled=not _fv_running):
+        st.session_state["_full_validate_target"] = []
+        st.session_state["_full_validate_idx"] = 0
+        st.rerun()
+with fv3:
+    if _fv_running:
+        _ft_live = st.session_state.get("_full_validate_target") or []
+        _fi_live = int(st.session_state.get("_full_validate_idx", 0))
+        st.caption(
+            f"일괄 검증 진행 중… (남은 추정: 약 {max(len(_ft_live) - _fi_live, 0)}건, "
+            f"사이드바에 진행률 표시)"
+        )
+
 mc1, mc2, mc3, mc4 = st.columns(4)
 _pct = lambda n: f"{n/total*100:.1f}%" if total > 0 else "0%"
 _unverified = total - sum(cnt_map.values())
@@ -1284,3 +1372,46 @@ for row in summary_rows:
 
     if c6.button("검증", key=f"btn_{q}", type="primary"):
         show_validation_dialog(q)
+
+# ── 목록 전체 일괄 검증 (테이블·버튼 렌더 후 배치 처리 → 화면 유지) ───
+FULL_VALIDATE_BATCH = 4
+_ftarget = st.session_state.get("_full_validate_target") or []
+_fidx = int(st.session_state.get("_full_validate_idx", 0))
+
+if _ftarget and _fidx < len(_ftarget):
+    _batch_f = _ftarget[_fidx : _fidx + FULL_VALIDATE_BATCH]
+    _done_f = sum(1 for q in _ftarget if q in st.session_state["validation_results"])
+    _label_f = (
+        f"전체 일괄 검증 중… {_done_f}/{len(_ftarget)}건 캐시됨 → "
+        f"배치 {_fidx + 1}~{min(_fidx + len(_batch_f), len(_ftarget))}/{len(_ftarget)}"
+    )
+    _full_validate_status_slot.caption(_label_f)
+    _full_validate_bar_slot.progress(min(_done_f / max(len(_ftarget), 1), 1.0))
+    with st.spinner(_label_f):
+        for q_code in _batch_f:
+            try:
+                st.session_state["validation_results"][q_code] = run_qcode_validation(
+                    q_code=q_code,
+                    qcode_master_df=qcode_master_df,
+                    spec_detail_df=spec_detail_df,
+                    pdf_mapping_df=pdf_mapping_df,
+                    maker_list_df=maker_list_df,
+                    pdf_base_dir=pdf_base_dir,
+                )
+            except Exception as e:
+                st.session_state["validation_results"][q_code] = {"error": str(e)}
+    st.session_state["_full_validate_idx"] = _fidx + len(_batch_f)
+    _done_after = sum(1 for q in _ftarget if q in st.session_state["validation_results"])
+    _full_validate_bar_slot.progress(min(_done_after / max(len(_ftarget), 1), 1.0))
+    if st.session_state["_full_validate_idx"] >= len(_ftarget):
+        st.session_state["_full_validate_last_count"] = len(_ftarget)
+        st.session_state["_full_validate_target"] = []
+        st.session_state["_full_validate_idx"] = 0
+        _full_validate_status_slot.empty()
+        _full_validate_bar_slot.empty()
+        st.session_state["_full_validate_just_finished"] = True
+    st.rerun()
+
+if st.session_state.pop("_full_validate_just_finished", False):
+    _n_done = int(st.session_state.pop("_full_validate_last_count", 0))
+    st.toast(f"일괄 검증 완료: {_n_done}건", icon="✅")
