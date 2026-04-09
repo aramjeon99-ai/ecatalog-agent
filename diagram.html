@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>eCatalog Agent 아키텍처</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', sans-serif; background: #f0f2f5; padding: 32px; }
+  h1 { text-align: center; color: #1a1a2e; font-size: 20px; margin-bottom: 28px; letter-spacing: -0.3px; }
+
+  .diagram { display: flex; flex-direction: column; align-items: center; gap: 0; }
+
+  /* ── 레이어 행 ── */
+  .row { display: flex; align-items: center; gap: 12px; width: 100%; justify-content: center; }
+  .row + .row { margin-top: 0; }
+
+  /* ── 화살표 ── */
+  .arrow-down { display: flex; justify-content: center; align-items: center; height: 36px; color: #888; font-size: 22px; }
+  .arrow-right { color: #888; font-size: 20px; flex-shrink: 0; }
+
+  /* ── 박스 기본 ── */
+  .box {
+    border-radius: 10px;
+    padding: 10px 16px;
+    font-size: 13px;
+    line-height: 1.5;
+    text-align: center;
+    border: 2px solid transparent;
+    position: relative;
+  }
+  .box .title { font-weight: 700; font-size: 13px; margin-bottom: 3px; }
+  .box .sub { font-size: 11px; color: #555; }
+
+  /* ── 색상 테마 ── */
+  .blue   { background: #e8f4fd; border-color: #3498db; }
+  .green  { background: #e9f7ef; border-color: #27ae60; }
+  .orange { background: #fef9e7; border-color: #f39c12; }
+  .purple { background: #f4ecf7; border-color: #8e44ad; }
+  .red    { background: #fdecea; border-color: #e74c3c; }
+  .gray   { background: #f2f3f4; border-color: #95a5a6; }
+  .teal   { background: #e8f8f5; border-color: #1abc9c; }
+  .dark   { background: #eaf0fb; border-color: #2c3e50; }
+
+  /* ── 섹션 레이블 ── */
+  .section-label {
+    font-size: 11px;
+    font-weight: 700;
+    color: #fff;
+    padding: 3px 10px;
+    border-radius: 5px 5px 0 0;
+    position: absolute;
+    top: -22px;
+    left: -2px;
+  }
+
+  /* ── 묶음 그룹 ── */
+  .group {
+    border: 2px dashed #bbb;
+    border-radius: 12px;
+    padding: 14px 18px 12px;
+    position: relative;
+    background: rgba(255,255,255,0.6);
+  }
+  .group-label {
+    position: absolute;
+    top: -13px;
+    left: 14px;
+    background: white;
+    padding: 0 8px;
+    font-size: 11px;
+    font-weight: 700;
+    color: #666;
+    border-radius: 4px;
+  }
+
+  /* ── 병렬 블록 ── */
+  .parallel {
+    border: 2px dashed #f39c12;
+    border-radius: 12px;
+    padding: 12px 16px 10px;
+    position: relative;
+    background: #fffbf0;
+  }
+  .parallel-label {
+    position: absolute;
+    top: -12px;
+    left: 14px;
+    background: #f39c12;
+    color: white;
+    padding: 1px 10px;
+    font-size: 11px;
+    font-weight: 700;
+    border-radius: 4px;
+  }
+
+  /* ── 결정 다이아몬드 ── */
+  .diamond-wrap { display: flex; justify-content: center; align-items: center; }
+  .diamond {
+    width: 130px; height: 130px;
+    background: #e9f7ef;
+    border: 2px solid #27ae60;
+    transform: rotate(45deg);
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 8px;
+  }
+  .diamond-inner {
+    transform: rotate(-45deg);
+    text-align: center;
+    font-size: 11px;
+    font-weight: 600;
+    color: #145a32;
+    line-height: 1.4;
+    padding: 4px;
+  }
+
+  /* ── 단계 배지 ── */
+  .badge {
+    display: inline-block;
+    background: #2c3e50;
+    color: white;
+    font-size: 10px;
+    font-weight: 700;
+    border-radius: 4px;
+    padding: 1px 6px;
+    margin-bottom: 4px;
+  }
+
+  /* ── 연결선 컨테이너 ── */
+  .connector { display: flex; flex-direction: column; align-items: center; }
+
+  /* ── 분기 화살표 ── */
+  .branch { display: flex; align-items: flex-start; gap: 0; }
+  .branch-line {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  .yes-label, .no-label {
+    font-size: 10px;
+    font-weight: 700;
+    padding: 1px 5px;
+    border-radius: 3px;
+    margin-bottom: 2px;
+  }
+  .yes-label { background: #27ae60; color: white; }
+  .no-label  { background: #e74c3c; color: white; }
+
+  /* ── STEP 흐름 ── */
+  .steps-flow { display: flex; flex-direction: column; align-items: center; gap: 0; }
+  .step-row { display: flex; align-items: center; gap: 8px; }
+
+  .wide { min-width: 200px; }
+  .narrow { min-width: 140px; }
+
+  hr.divider { width: 80%; border: none; border-top: 1px dashed #ccc; margin: 8px 0; }
+</style>
+</head>
+<body>
+<h1>eCatalog Agent — 시스템 아키텍처</h1>
+
+<div class="diagram">
+
+  <!-- ① UI 입력 -->
+  <div class="row">
+    <div class="group" style="display:flex; gap:12px; align-items:center;">
+      <span class="group-label">🖥️ Streamlit UI</span>
+      <div class="box blue narrow">
+        <div class="badge">INPUT</div>
+        <div class="title">시스템 데이터 업로드</div>
+        <div class="sub">system_data.xlsx<br>pdf_mapping.xlsx<br>maker_list.xlsx</div>
+      </div>
+      <span class="arrow-right">→</span>
+      <div class="box blue narrow">
+        <div class="badge">LIST</div>
+        <div class="title">Q코드 목록</div>
+        <div class="sub">PDF·URL 있는 항목만<br>앞7 + 뒤7 사전 계산</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="arrow-down">↓</div>
+
+  <!-- ② Context 수집 -->
+  <div class="row">
+    <div class="box teal wide">
+      <div class="badge">CONTEXT</div>
+      <div class="title">QcodeContext 수집</div>
+      <div class="sub">PDF 텍스트 추출 (PyMuPDF)<br>URL · 사양값 · 메이커명 · 다중 PDF</div>
+    </div>
+  </div>
+
+  <div class="arrow-down">↓</div>
+
+  <!-- ③ 병렬 실행 -->
+  <div class="row">
+    <div class="parallel">
+      <span class="parallel-label">🔀 병렬 실행 (ThreadPoolExecutor)</span>
+      <div style="display:flex; gap:12px; margin-top:6px;">
+        <div class="box orange narrow">
+          <div class="title">메이커 검증</div>
+          <div class="sub">verify_manufacturer()<br>maker_catalog_hints</div>
+        </div>
+        <div class="box orange narrow">
+          <div class="title">웹 검색</div>
+          <div class="sub">web_searcher<br>timeout 6s</div>
+        </div>
+        <div class="box orange narrow">
+          <div class="title">URL 스펙 추출</div>
+          <div class="sub">url_spec_fetcher<br>timeout 8s</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="arrow-down">↓</div>
+
+  <!-- ④ 조기 승인 판단 -->
+  <div class="row">
+    <div class="group" style="display:flex; gap:0; flex-direction:column; align-items:center;">
+      <span class="group-label">⚡ 조기 승인 로직</span>
+      <div style="display:flex; gap:40px; align-items:flex-start; margin-top:8px;">
+
+        <!-- PDF 완전 확인 -->
+        <div style="display:flex; flex-direction:column; align-items:center; gap:6px;">
+          <div class="box green" style="min-width:170px;">
+            <div class="title">_pdf_fully_confirmed</div>
+            <div class="sub">pdf존재 + 모델일치<br>+ 메이커일치 + 사양확인</div>
+          </div>
+          <div style="display:flex; gap:20px; align-items:flex-start;">
+            <div style="display:flex; flex-direction:column; align-items:center;">
+              <span class="yes-label">YES</span>
+              <span style="font-size:18px; color:#27ae60;">↓</span>
+              <div class="box green" style="min-width:100px; font-size:12px; font-weight:700;">즉시 승인</div>
+            </div>
+            <div style="display:flex; flex-direction:column; align-items:center;">
+              <span class="no-label">NO</span>
+              <span style="font-size:18px; color:#e74c3c;">↓</span>
+              <div class="box gray" style="min-width:100px; font-size:11px;">다음 판단 →</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 9999 판단 -->
+        <div style="display:flex; flex-direction:column; align-items:center; gap:6px;">
+          <div class="box green" style="min-width:170px;">
+            <div class="title">_no_meaningful_specs</div>
+            <div class="sub">사양값 전부 9999<br>(미입력 상태)</div>
+          </div>
+          <div style="display:flex; gap:20px; align-items:flex-start;">
+            <div style="display:flex; flex-direction:column; align-items:center;">
+              <span class="yes-label">YES</span>
+              <span style="font-size:18px; color:#27ae60;">↓</span>
+              <div class="box green" style="min-width:100px; font-size:12px; font-weight:700;">모델·메이커<br>일치 시 승인</div>
+            </div>
+            <div style="display:flex; flex-direction:column; align-items:center;">
+              <span class="no-label">NO</span>
+              <span style="font-size:18px; color:#e74c3c;">↓</span>
+              <div class="box gray" style="min-width:100px; font-size:11px;">LangGraph →</div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <div class="arrow-down">↓</div>
+
+  <!-- ⑤ LangGraph 워크플로우 -->
+  <div class="row">
+    <div class="group" style="display:flex; flex-direction:column; align-items:center; gap:0;">
+      <span class="group-label">🔗 LangGraph 워크플로우 (graph.py)</span>
+      <div style="display:flex; align-items:center; gap:0; margin-top:10px; flex-wrap:wrap; justify-content:center;">
+
+        <div class="box dark" style="min-width:110px; margin:4px;">
+          <div class="badge">STEP 0</div>
+          <div class="title">입력 검증</div>
+          <div class="sub">필수 필드<br>PDF 존재 확인</div>
+        </div>
+        <span class="arrow-right" style="color:#e74c3c; font-size:13px;">─ 오류 시 STEP6 →</span>
+
+        <div class="box dark" style="min-width:110px; margin:4px;">
+          <div class="badge">STEP 1</div>
+          <div class="title">PDF 파싱</div>
+          <div class="sub">모델·메이커 매칭<br>pre_parsed_text 재활용</div>
+        </div>
+        <span class="arrow-right" style="color:#e74c3c; font-size:13px;">─ SKIP 시 →</span>
+
+        <div class="box dark" style="min-width:110px; margin:4px;">
+          <div class="badge">STEP 2</div>
+          <div class="title">신뢰도 검사</div>
+          <div class="sub">PDF 출처<br>품질 평가</div>
+        </div>
+        <span class="arrow-right">→</span>
+
+        <div class="box dark" style="min-width:110px; margin:4px;">
+          <div class="badge">STEP 3</div>
+          <div class="title">사양 비교</div>
+          <div class="sub">Claude API<br>JSON 출력</div>
+        </div>
+        <span class="arrow-right">→</span>
+
+        <div class="box dark" style="min-width:110px; margin:4px;">
+          <div class="badge">STEP 4</div>
+          <div class="title">메이커 검증</div>
+          <div class="sub">maker_list<br>+ hints</div>
+        </div>
+        <span class="arrow-right">→</span>
+
+        <div class="box dark" style="min-width:110px; margin:4px;">
+          <div class="badge">STEP 5</div>
+          <div class="title">중복 검사</div>
+          <div class="sub">SQLite<br>이력 조회</div>
+        </div>
+        <span class="arrow-right">→</span>
+
+        <div class="box purple" style="min-width:120px; margin:4px;">
+          <div class="badge" style="background:#8e44ad;">STEP 6</div>
+          <div class="title">최종 판정</div>
+          <div class="sub">APPROVED<br>REJECTED</div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <div class="arrow-down">↓</div>
+
+  <!-- ⑥ 출력 -->
+  <div class="row">
+    <div class="group" style="display:flex; gap:16px; align-items:center;">
+      <span class="group-label">📄 출력</span>
+      <div class="box gray narrow">
+        <div class="title">검토 보고서</div>
+        <div class="sub">사양확장표 (.xlsx)</div>
+      </div>
+      <div class="box gray narrow">
+        <div class="title">SQLite 로그</div>
+        <div class="sub">단계별 판정 이력</div>
+      </div>
+      <div class="box blue narrow">
+        <div class="title">UI 결과 표시</div>
+        <div class="sub">판정 · 이유<br>사양 비교표</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- 범례 -->
+<div style="margin-top:32px; display:flex; justify-content:center; gap:20px; flex-wrap:wrap;">
+  <div style="display:flex; align-items:center; gap:6px; font-size:12px;">
+    <div style="width:14px;height:14px;background:#e8f4fd;border:2px solid #3498db;border-radius:3px;"></div> UI / 입출력
+  </div>
+  <div style="display:flex; align-items:center; gap:6px; font-size:12px;">
+    <div style="width:14px;height:14px;background:#fef9e7;border:2px solid #f39c12;border-radius:3px;"></div> 병렬 처리
+  </div>
+  <div style="display:flex; align-items:center; gap:6px; font-size:12px;">
+    <div style="width:14px;height:14px;background:#e9f7ef;border:2px solid #27ae60;border-radius:3px;"></div> 조기 종료 판단
+  </div>
+  <div style="display:flex; align-items:center; gap:6px; font-size:12px;">
+    <div style="width:14px;height:14px;background:#eaf0fb;border:2px solid #2c3e50;border-radius:3px;"></div> LangGraph 단계
+  </div>
+  <div style="display:flex; align-items:center; gap:6px; font-size:12px;">
+    <div style="width:14px;height:14px;background:#f4ecf7;border:2px solid #8e44ad;border-radius:3px;"></div> 최종 판정
+  </div>
+</div>
+
+</body>
+</html>
